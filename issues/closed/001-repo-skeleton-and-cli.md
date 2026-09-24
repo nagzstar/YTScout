@@ -87,3 +87,52 @@ and a test runner that passes. One session, then every later session starts from
 
 `DESIGN.md §9.2` for the layout, `§12` for the setup story. Leave `config/settings.yaml`
 and `.env` alone if they exist — they are the user's.
+
+## Outcome (closed 2026-09-24)
+
+Delivered: `pyproject.toml` (src layout, console script, deps pinned to the installed
+majors, ruff `E,F,I,UP,B` at line length 100, pytest `testpaths`), `src/ytscout/{__init__,
+__main__,cli,settings}.py`, `config/settings.example.yaml`, `tests/test_cli.py` (12 tests),
+`tests/test_settings.py` (17 tests), README "Setup" rewritten to what runs now. The venv was
+created and `pip install -e ".[dev]"` exits 0. All seven acceptance criteria were proved by
+running them: `--help` lists the 11 commands, every stub exits 2, `doctor` exits 1 in an
+empty directory and 0 with the example copied in and `own_channel_id` filled, pytest passes
+(35), ruff check and format --check are clean, `git status` shows nothing under the
+ignored paths.
+
+Decisions, and why:
+
+- **Repo root is found by walking up from the cwd** to the first folder holding
+  `pyproject.toml` or `.env`, falling back to the cwd itself. That satisfies both "relative
+  paths resolve against the repo root, not the cwd" and "`doctor` exits 1 in a tmp cwd".
+  `load(path=None, *, repo_root=None)` takes an explicit root so tests never touch the
+  real repo's files. `Settings.repo_root` and `Settings.settings_path` are exposed for
+  later issues (the store will put SQLite under `Settings.data_dir`, already a resolved
+  `Path`).
+- **`.env` is read with `dotenv_values`, not `load_dotenv`.** Same semantics (a real
+  environment variable wins, empty values count as unset) without mutating `os.environ`,
+  which would leak between tests and between commands in one process. Only the four
+  `YT_*` keys are read.
+- **`api_key` is `field(repr=False)`** so a stray `print(settings)` cannot leak it;
+  `Settings.has_api_key` is what `doctor` and later `youtube/` code should use.
+- **Stub subcommands accept any extra flags** via `parse_known_args`, so
+  `collect --own --max-units 500` from the future `run_weekly.ps1` still exits 2. `doctor`
+  (and every real command later) rejects unknown flags with argparse's usage error.
+- **`lazyboy/` is excluded from ruff** (`extend-exclude`). `ruff format .` reformatted
+  `guard.py` and `run.py`, which are the runner's own tooling and outside this issue's
+  Covers; they were restored and left as committed.
+- Stub messages name the issue that delivers each command (`auth` 011, `collect` 004,
+  `discover` 006, `packet` 016, `analyse` 017, `score` 024, `scout` 021, `dashboard` 007,
+  `serve` 008, `audit` 019).
+
+Notes for the next issues:
+
+- The venv on this machine is **Python 3.14.7**, not 3.12; `requires-python >= 3.12` and
+  everything installed and passed on 3.14. README says "3.12 or newer".
+- Installed majors pinned: google-api-python-client 2.x, google-auth-oauthlib 1.x,
+  google-auth-httplib2 0.4 (pinned `>=0.2,<1`), youtube-transcript-api 1.x, pyyaml 6.x,
+  jinja2 3.x, python-dotenv 1.x, pytest 9.x (`>=8,<10`), ruff 0.16 (`>=0.5,<1`).
+- The user's `.env` exists at the repo root; `config/settings.yaml` does not yet, so
+  `ytscout doctor` in the repo currently exits 1 with the copy-the-example message. Issue
+  005 (Active) is where Nagz fills both in.
+- Nothing was verified by a human; nothing in this issue needed one.
