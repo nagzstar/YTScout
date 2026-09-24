@@ -1,0 +1,84 @@
+# Production steps and their default manual hours per video (DESIGN.md §6.4).
+#
+# This is the fixed list of steps every niche is costed against. `manual_hours_per_video`
+# for a niche is the sum, over the steps the niche requires, of the hours the pipeline does
+# NOT save (config/pipeline_coverage.yaml says what it saves). Pure data: `ytscout audit`
+# reads it, the M4 scoring (issue 023) reads it, nothing writes it.
+#
+# Per-step keys:
+#   id                         stable identifier; must match a key in pipeline_coverage.yaml
+#   label                      the §6.4 row name
+#   default_hours              hours per video when a human does the whole step
+#   notes                      free text
+#   specific_footage_hours     visuals_stock only: default_hours when a niche needs
+#                              specific real footage rather than generic stock (§6.4)
+#   disqualifying_for_faceless a niche that requires this step does not fit a faceless
+#                              pipeline; excluded from the "every step" totals
+#   shorts_hours               hours used instead of default_hours for the Shorts format
+#   floor_hours                effective hours never drop below this, whatever the coverage
+
+steps:
+  - id: research
+    label: Topic research & fact-check
+    default_hours: 0.75
+    notes: Find the five entries, one reputable source and one number each.
+
+  - id: script
+    label: Script
+    default_hours: 0.5
+    notes: Hook, five beats, loop line.
+
+  - id: voiceover
+    label: Voiceover
+    default_hours: 0.25
+    notes: TTS makes this ~0.
+
+  - id: visuals_stock
+    label: Visual sourcing (stock / AI images / clips)
+    default_hours: 1.0
+    specific_footage_hours: 2.5
+    notes: Niches needing specific real footage cost specific_footage_hours instead.
+
+  - id: footage_original
+    label: Screen recording / gameplay / original footage
+    default_hours: 3.0
+    disqualifying_for_faceless: true
+    notes: Only applies to niches that need it; usually disqualifying.
+
+  - id: presenter
+    label: Face-cam / presenter
+    default_hours: 4.0
+    disqualifying_for_faceless: true
+    notes: Disqualifying for a faceless pipeline.
+
+  - id: assembly
+    label: Assembly & edit
+    default_hours: 1.0
+    notes: ffmpeg / moviepy makes this ~0.
+
+  - id: thumbnail
+    label: Thumbnail
+    default_hours: 0.25
+    shorts_hours: 0.0
+    notes: Shorts have no custom thumbnail.
+
+  - id: metadata
+    label: Title / description / tags
+    default_hours: 0.15
+    notes: ""
+
+  - id: upload
+    label: Upload & schedule
+    default_hours: 0.1
+    notes: API upload makes this ~0.
+
+  - id: qa
+    label: QA / review before publish
+    default_hours: 0.15
+    floor_hours: 0.1
+    notes: Never below 0.1 - a human should look before it goes out.
+
+  - id: community
+    label: Community / comments
+    default_hours: 0.1
+    notes: ""

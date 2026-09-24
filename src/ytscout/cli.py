@@ -11,9 +11,11 @@ import argparse
 import platform
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from ytscout import __version__
-from ytscout.settings import Settings, SettingsError, load
+from ytscout.audit import COVERAGE_RELPATH, STEPS_RELPATH, AuditError, format_table, run_audit
+from ytscout.settings import Settings, SettingsError, find_repo_root, load
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -33,10 +35,9 @@ STUBS: dict[str, tuple[str, str]] = {
     "scout": ("the niche pipeline: propose / validate / tag / snowball / sensitivity", "021"),
     "dashboard": ("build dashboard/index.html", "007"),
     "serve": ("localhost review server for approve/reject", "008"),
-    "audit": ("validate and print the pipeline coverage tables", "019"),
 }
 
-COMMANDS: tuple[str, ...] = ("doctor", *STUBS)
+COMMANDS: tuple[str, ...] = ("doctor", *STUBS, "audit")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,6 +55,24 @@ def build_parser() -> argparse.ArgumentParser:
     for name, (help_text, issue) in STUBS.items():
         stub = sub.add_parser(name, help=f"{help_text} (issue {issue})")
         stub.set_defaults(func=_make_stub(name, issue), stub=True)
+
+    audit = sub.add_parser(
+        "audit",
+        help="validate and print the pipeline coverage table (no API, no network)",
+    )
+    audit.add_argument(
+        "--steps",
+        type=Path,
+        default=None,
+        help=f"production steps YAML (default: <repo root>/{STEPS_RELPATH.as_posix()})",
+    )
+    audit.add_argument(
+        "--coverage",
+        type=Path,
+        default=None,
+        help=f"pipeline coverage YAML (default: <repo root>/{COVERAGE_RELPATH.as_posix()})",
+    )
+    audit.set_defaults(func=cmd_audit)
 
     return parser
 
@@ -89,6 +108,23 @@ def cmd_doctor(_args: argparse.Namespace, _extras: list[str]) -> int:
         f"{_yes_no(settings.client_secret_path.is_file())}"
     )
     print(f"oauth token: {rel(settings.token_path)}: {_yes_no(settings.token_path.is_file())}")
+    return EXIT_OK
+
+
+def cmd_audit(args: argparse.Namespace, _extras: list[str]) -> int:
+    """Cross-check production_steps.yaml against pipeline_coverage.yaml and print the table.
+
+    Exit 1 when either file is invalid or a step is missing from one side.
+    """
+    root = find_repo_root()
+    steps_path = args.steps if args.steps is not None else root / STEPS_RELPATH
+    coverage_path = args.coverage if args.coverage is not None else root / COVERAGE_RELPATH
+    try:
+        report = run_audit(steps_path, coverage_path)
+    except AuditError as exc:
+        print(f"audit: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    print(format_table(report))
     return EXIT_OK
 
 

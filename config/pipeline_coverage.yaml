@@ -1,0 +1,183 @@
+# What the production pipeline (top-five-animals-1) already does, per DESIGN.md §6.4 step.
+#
+# Written by the M3 pipeline audit (issue 019) from a read-only pass over the pipeline
+# repo; corrected by Nagz in issue 020. `ytscout audit` validates it against
+# config/production_steps.yaml and prints the effective manual hours. The M4 scoring
+# (issue 023) reads it: a step's manual hours for a niche are
+#   automated -> 0 · partial -> manual_hours_override · manual -> the step's default hours
+# with the step's floor_hours applied last and shorts_hours capping the Shorts figure.
+#
+# Coverage means "when the pipeline makes a video of the kind it already makes". Being
+# conservative: where the pipeline drafts and a human approves, that is `partial` with
+# the approval time as the override, never `automated`. Evidence paths are relative to
+# the pipeline repo root. docs/pipeline-audit.md explains every call in prose.
+
+audited_at: 2026-09-24
+pipeline_repo: 'C:\Users\nagaj\git\top-five-animals-1'
+pipeline_commit: 67b4c1d
+# Shorts: countdown and versus, end to end. Long-form: the one-animal deep dive (pipeline
+# issue 041) has research, script, package, production and a 16:9 assembler; compilations
+# (040) and tournaments (042) are briefs only. Analytics and the weekly routine are still
+# Shorts-only, which does not affect production hours.
+formats_supported: [shorts, longform]
+
+steps:
+  research:
+    coverage: partial
+    manual_hours_override: 0.2
+    evidence:
+      - .claude/skills/research/SKILL.md
+      - .claude/skills/topics/SKILL.md
+      - scripts/new_item.py
+    notes: >-
+      Claude finds each entry's stat and source with WebSearch/WebFetch, ranks by the
+      numbers and writes research.md; check_script.py later proves every spoken number
+      traces back to it. The human reads the entry table and approves (research
+      SKILL.md "Human gate"), marks a backlog row PROMOTE (new_item.py refuses otherwise)
+      and, when footage is in doubt, searches Storyblocks by hand because an agent may
+      not (topics SKILL.md). 0.2 h = read, approve, occasional footage check.
+
+  script:
+    coverage: partial
+    manual_hours_override: 0.1
+    evidence:
+      - .claude/skills/script/SKILL.md
+      - scripts/check_script.py
+    notes: >-
+      Claude writes the annotated script, three hooks and the TTS-ready VOICEOVER block;
+      check_script.py verifies numbers against research.md, refuses numerals and projects
+      the duration at the channel's measured narration rate. The human reads the script
+      and approves, or rejects with a note the rewrite must address. 0.1 h = one read.
+
+  voiceover:
+    coverage: partial
+    manual_hours_override: 0.05
+    evidence:
+      - scripts/gen_vo.py
+      - .claude/skills/produce/SKILL.md
+    notes: >-
+      gen_vo.py synthesises the narration with ElevenLabs (with word timestamps that
+      drive captions and shot starts), applying pronunciation overrides from
+      production.md. The produce skill asks the user to listen to vo.mp3 before moving
+      on; a mangled species name means an override and a re-run. 0.05 h = one listen.
+
+  visuals_stock:
+    coverage: partial
+    manual_hours_override: 0.5
+    evidence:
+      - scripts/storyblocks.py
+      - scripts/fetch_footage.py
+      - scripts/footage_lib.py
+      - scripts/gen_images.py
+      - scripts/gen_clips.py
+      - scripts/contact_sheet.py
+      - .claude/skills/produce/SKILL.md
+    notes: >-
+      The primary library, Storyblocks, has no API and forbids bots, so the owner
+      searches and downloads every clip by hand from the wanted-list storyblocks.py
+      writes; storyblocks.py --pick-up files what came down. The free fallback
+      (fetch_footage.py, Pexels then Pixabay) auto-picks by sharpness but "a person
+      checks each clip before the video is approved". footage_lib.py reuses clips across
+      videos on the owner's by-eye verdicts. AI stills are local and free (gen_images.py);
+      AI motion (gen_clips.py, Replicate) is judged per shot by the user and capped by
+      cost. contact_sheet.py is the review grid. This is the largest remaining human step:
+      0.5 h of the 1.0 h default, falling as the footage library fills.
+
+  footage_original:
+    coverage: manual
+    evidence: []
+    notes: >-
+      No evidence - assumed manual. Nothing in scripts/ records a screen, captures
+      gameplay or handles original footage; the pipeline is stock-and-AI only.
+      Disqualifying for a faceless pipeline, so excluded from the totals anyway.
+
+  presenter:
+    coverage: manual
+    evidence: []
+    notes: >-
+      No evidence - assumed manual. The channel is faceless by design (README.md) and
+      nothing in the pipeline films, frames or edits a presenter. Disqualifying, so
+      excluded from the totals.
+
+  assembly:
+    coverage: automated
+    evidence:
+      - scripts/assemble.py
+      - scripts/assemble_long.py
+      - scripts/captions.py
+      - scripts/make_cards.py
+      - scripts/music.py
+      - scripts/fetch_sfx.py
+      - scripts/versus_edit.py
+    notes: >-
+      assemble.py renders the 1080x1920 Short in one ffmpeg pass from production.md:
+      clips and stills, word-timed burned-in captions, stat cards, the music bed, animal
+      SFX and the voiceover. versus_edit.py does the versus timeline. assemble_long.py
+      renders the 16:9 deep dive segment by segment and --splice joins the approved
+      segments. No human touches the render itself; watching it is counted under qa. The
+      long-form per-segment review is human time this file does not yet count - raise
+      qa's hours in issue 020 if it matters.
+
+  thumbnail:
+    coverage: partial
+    manual_hours_override: 0.05
+    evidence:
+      - scripts/make_thumbnail.py
+      - .claude/skills/package/SKILL.md
+      - .claude/skills/publish/SKILL.md
+    notes: >-
+      make_thumbnail.py draws thumbnail.jpg (1280x720) and thumbnail-short.jpg
+      (1080x1920) from the package's Upload block with Pillow and ffmpeg, no AI. Shorts
+      do not need one (the first frame is what matters; shorts_hours = 0). Long-form
+      requires one and the package skill has the human approve the composition.
+      0.05 h = glance and approve, long-form only.
+
+  metadata:
+    coverage: partial
+    manual_hours_override: 0.05
+    evidence:
+      - .claude/skills/package/SKILL.md
+      - scripts/yt_upload.py
+    notes: >-
+      Claude writes five title variants, description, tags, hashtags, playlist, the
+      pinned-comment text and the Upload YAML block into package.md; title rules are
+      pytest-checked and yt_upload.py --dry-run validates the block. The human picks a
+      title and approves. 0.05 h = pick and approve.
+
+  upload:
+    coverage: partial
+    manual_hours_override: 0.05
+    evidence:
+      - scripts/yt_upload.py
+      - scripts/approve_week.py
+      - .claude/skills/publish/SKILL.md
+    notes: >-
+      yt_upload.py uploads and schedules through the YouTube Data API from package.md,
+      guarded by channel_guard and by a consent gate that reads the ticked "Publish
+      consent" box and slot in the content item. Only approve_week.py, run by the owner
+      at an interactive terminal with one keypress per item, ticks that box; an agent
+      never does. 0.05 h = that keypress and the calendar slot, amortised per video.
+
+  qa:
+    coverage: manual
+    evidence:
+      - scripts/check_script.py
+      - scripts/check_render.py
+      - .claude/skills/produce/SKILL.md
+      - .claude/skills/publish/SKILL.md
+    notes: >-
+      Automated checks exist (check_script.py on the words, check_render.py on the
+      rendered file: canvas, duration, captions burned in, loop, trailing silence,
+      loudness) but they add gates rather than replace the human one: the produce skill
+      asks the user to watch final.mp4 end to end and the publish pre-flight checklist is
+      run before every upload. The human still spends the full default, so manual. For an
+      8-15 minute long-form video this undercounts; adjust in 020.
+
+  community:
+    coverage: manual
+    evidence: []
+    notes: >-
+      No script reads, replies to or moderates comments; yt_analytics.py only counts
+      them. The pinned comment is posted by hand (publish SKILL.md: "the API does not
+      pin"), and the channel skill triages comments only when the user pastes them in.
+      No evidence of automation - manual.
