@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Protocol
 
 from googleapiclient.errors import HttpError
@@ -40,6 +41,13 @@ def freeze(params: Mapping[str, Any]) -> FrozenParams:
     return tuple(sorted((k, tuple(v) if isinstance(v, list) else v) for k, v in params.items()))
 
 
+def verified_http(ca_certs: Path) -> Any:
+    """An ``httplib2.Http`` that verifies TLS against ``ca_certs``. Verification stays on."""
+    import httplib2
+
+    return httplib2.Http(ca_certs=str(ca_certs))
+
+
 def _is_quota_exceeded(exc: HttpError) -> bool:
     try:
         body = json.loads(exc.content.decode("utf-8"))
@@ -50,13 +58,21 @@ def _is_quota_exceeded(exc: HttpError) -> bool:
 
 
 class GoogleTransport:
-    """The real thing. The discovery client is built on first use, not at construction."""
+    """The real thing. The discovery client is built on first use, not at construction.
 
-    def __init__(self, api_key: str | None, *, service: Any = None) -> None:
+    ``ca_certs`` is the PEM bundle TLS is verified against (see ``ytscout.youtube.tls``);
+    ``None`` leaves httplib2 to its default, which is certifi unless ``HTTPLIB2_CA_CERTS``
+    is set.
+    """
+
+    def __init__(
+        self, api_key: str | None, *, service: Any = None, ca_certs: Path | None = None
+    ) -> None:
         if not api_key and service is None:
             raise ValueError("no YouTube API key: set YT_API_KEY in .env (see ytscout doctor)")
         self._api_key = api_key
         self._service = service
+        self._ca_certs = ca_certs
 
     def __repr__(self) -> str:
         return "GoogleTransport(api_key=***)"
@@ -65,9 +81,10 @@ class GoogleTransport:
         if self._service is None:
             from googleapiclient.discovery import build
 
-            self._service = build(
-                "youtube", "v3", developerKey=self._api_key, cache_discovery=False
-            )
+            kwargs: dict[str, Any] = {"developerKey": self._api_key, "cache_discovery": False}
+            if self._ca_certs is not None:
+                kwargs["http"] = verified_http(self._ca_certs)
+            self._service = build("youtube", "v3", **kwargs)
         return self._service
 
     def call(self, resource: str, method: str, *, etag: str | None = None, **params: Any) -> dict:

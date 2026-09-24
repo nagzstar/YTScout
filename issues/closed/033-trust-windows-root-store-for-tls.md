@@ -62,3 +62,39 @@ through `requests` (`REQUESTS_CA_BUNDLE`). The fix must cover both, or pass a sh
 `ca_certs`/`verify` into each. Issue 012 worked around it with `data/ca-bundle.pem`
 (certifi + Avast's `wscert.pem`) and both env vars set; that file is gitignored and is a fine
 permanent location for the combined bundle.
+
+## Outcome (closed 2026-09-24)
+
+**Choice: the combined bundle (approach 1), not `truststore`.** httplib2 builds its own
+`SSLContext` from a PEM path (`load_verify_locations(ca_certs)`), so `truststore`'s context
+injection would never reach the Data API or Analytics clients. A file that both stacks can
+consume was the only option that covers httplib2 *and* `requests` with one mechanism.
+
+- New module `src/ytscout/youtube/tls.py`. `ca_bundle(data_dir)` honours an existing
+  `HTTPLIB2_CA_CERTS`, then `REQUESTS_CA_BUNDLE`; otherwise it writes
+  `data/ca-bundle.pem` = certifi (121 roots) + every server-auth root from the Windows
+  `ROOT` store via `ssl.enum_certificates` (46 on this PC, Avast's among them). The file is
+  rewritten only when its content would change. Roots trusted for code signing only are
+  skipped. Verification is never turned off; the tests assert it.
+- `GoogleTransport(..., ca_certs=)` passes `httplib2.Http(ca_certs=...)` into `build()`.
+  `GoogleAnalyticsTransport(..., ca_certs=)` wraps the credentials in
+  `AuthorizedHttp(credentials, http=Http(ca_certs=...))`, which is what `build(credentials=)`
+  does internally with a default `Http`; so token refresh inside the API client verifies
+  against the bundle too.
+- The `requests` side: `oauth.refresh_token`, `load_credentials`, `describe` and
+  `run_consent_flow` take `ca_certs`; refresh uses `Request(session)` with
+  `session.verify` set and the consent flow sets `flow.oauth2session.verify`.
+- The CLI builds the bundle only when a request can follow: the Data API transport, the
+  Analytics transport, a token refresh when a token file exists, and the consent flow. A
+  run that stops for want of a token still creates no `data/`. A `TlsError` (an env var
+  naming a missing file) prints `<command>: ...` and exits 1.
+- `ytscout doctor` prints `tls ca bundle: <path> (certifi 121 + Windows root store 46)`,
+  or `(N certificates, from HTTPLIB2_CA_CERTS)` when overridden, or `BROKEN - ...`. No
+  network call.
+- Proof: `collect --own --max-units 10` with both env vars unset exited 0 (3 units). The
+  weekly Task Scheduler job needs no environment variables.
+- `data/ca-bundle.pem` from 012 (certifi + `wscert.pem`) was replaced by the generated one;
+  same path, same purpose, now maintained by the code.
+
+Not covered: `youtube-transcript-api` uses its own `requests` session for youtube.com; it
+is outside this issue's Google-API scope and has not been re-tested under Avast here.

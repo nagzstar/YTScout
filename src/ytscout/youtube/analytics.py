@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Protocol
 
 OWN_CHANNEL = "channel==MINE"
@@ -44,11 +45,19 @@ class AnalyticsTransport(Protocol):
 
 
 class GoogleAnalyticsTransport:
-    """The real thing, authorised by OAuth credentials. The client is built on first use."""
+    """The real thing, authorised by OAuth credentials. The client is built on first use.
 
-    def __init__(self, credentials: Any, *, service: Any = None) -> None:
+    With ``ca_certs`` (see ``ytscout.youtube.tls``) the client's httplib2 verifies TLS
+    against that bundle: the credentials are wrapped in ``AuthorizedHttp`` around such an
+    ``Http``, which is what ``build(credentials=...)`` does internally with a default one.
+    """
+
+    def __init__(
+        self, credentials: Any, *, service: Any = None, ca_certs: Path | None = None
+    ) -> None:
         self._credentials = credentials
         self._service = service
+        self._ca_certs = ca_certs
 
     def __repr__(self) -> str:
         return "GoogleAnalyticsTransport(credentials=***)"
@@ -57,9 +66,18 @@ class GoogleAnalyticsTransport:
         if self._service is None:
             from googleapiclient.discovery import build
 
-            self._service = build(
-                "youtubeAnalytics", "v2", credentials=self._credentials, cache_discovery=False
-            )
+            kwargs: dict[str, Any] = {"cache_discovery": False}
+            if self._ca_certs is None:
+                kwargs["credentials"] = self._credentials
+            else:
+                from google_auth_httplib2 import AuthorizedHttp
+
+                from ytscout.youtube.transport import verified_http
+
+                kwargs["http"] = AuthorizedHttp(
+                    self._credentials, http=verified_http(self._ca_certs)
+                )
+            self._service = build("youtubeAnalytics", "v2", **kwargs)
         return self._service
 
     def query(self, **params: Any) -> dict:

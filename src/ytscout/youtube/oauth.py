@@ -4,6 +4,10 @@ The token file lives at ``Settings.token_path`` (``YT_TOKEN_PATH``). Nothing her
 or logs a token value; ``check_scopes`` and ``describe`` deal in scope names only.
 ``run_consent_flow`` opens a browser for Google's consent screen, so only ``ytscout auth``
 (an Active step, blocked in unattended sessions) ever calls it.
+
+Refresh and consent both go through ``requests``, not httplib2. ``ca_certs`` (see
+``ytscout.youtube.tls``) is the PEM bundle those sessions verify against; ``None`` leaves
+``requests`` to its default (certifi, or ``REQUESTS_CA_BUNDLE``).
 """
 
 from __future__ import annotations
@@ -27,7 +31,18 @@ def _save(credentials: Any, token_path: Path) -> None:
     token_path.write_text(credentials.to_json(), encoding="utf-8")
 
 
-def load_credentials(token_path: Path, *, refresh: bool = True) -> Any | None:
+def _session(ca_certs: Path | None) -> Any:
+    import requests
+
+    session = requests.Session()
+    if ca_certs is not None:
+        session.verify = str(ca_certs)
+    return session
+
+
+def load_credentials(
+    token_path: Path, *, refresh: bool = True, ca_certs: Path | None = None
+) -> Any | None:
     """The token at ``token_path`` as ``google.oauth2.credentials.Credentials``.
 
     ``None`` when the file is absent. With ``refresh``, an expired token that has a refresh
@@ -44,17 +59,17 @@ def load_credentials(token_path: Path, *, refresh: bool = True) -> Any | None:
         # The library names the missing field; that is safe to show, values are not.
         raise TokenError(f"token file will not load as an authorized-user token: {exc}") from exc
     if refresh and credentials.expired and credentials.refresh_token:
-        refresh_token(credentials, token_path)
+        refresh_token(credentials, token_path, ca_certs=ca_certs)
     return credentials
 
 
-def refresh_token(credentials: Any, token_path: Path) -> None:
+def refresh_token(credentials: Any, token_path: Path, *, ca_certs: Path | None = None) -> None:
     """Refresh ``credentials`` against Google and write them back to ``token_path``."""
     from google.auth.exceptions import RefreshError, TransportError
     from google.auth.transport.requests import Request
 
     try:
-        credentials.refresh(Request())
+        credentials.refresh(Request(session=_session(ca_certs)))
     except RefreshError as exc:
         raise TokenError("token refresh was refused by Google (revoked or expired)") from exc
     except TransportError as exc:
@@ -62,11 +77,16 @@ def refresh_token(credentials: Any, token_path: Path) -> None:
     _save(credentials, token_path)
 
 
-def run_consent_flow(client_secret_path: Path, token_path: Path) -> Any:
+def run_consent_flow(
+    client_secret_path: Path, token_path: Path, *, ca_certs: Path | None = None
+) -> Any:
     """Open Google's consent screen for the two read-only Analytics scopes; save the token."""
     from google_auth_oauthlib.flow import InstalledAppFlow
 
     flow = InstalledAppFlow.from_client_secrets_file(str(client_secret_path), list(SCOPES))
+    if ca_certs is not None:
+        # The token exchange is a requests call on this session.
+        flow.oauth2session.verify = str(ca_certs)
     credentials = flow.run_local_server(port=0)
     _save(credentials, token_path)
     return credentials
@@ -112,7 +132,7 @@ class TokenStatus:
     error: str | None = None
 
 
-def describe(token_path: Path) -> TokenStatus:
+def describe(token_path: Path, *, ca_certs: Path | None = None) -> TokenStatus:
     """Load the token, refresh it if expired, and report on it without raising."""
     try:
         credentials = load_credentials(token_path, refresh=False)
@@ -130,7 +150,7 @@ def describe(token_path: Path) -> TokenStatus:
     )
     if status.expired and status.has_refresh_token:
         try:
-            refresh_token(credentials, token_path)
+            refresh_token(credentials, token_path, ca_certs=ca_certs)
             status.refreshed = True
             status.scopes = granted_scopes(credentials)
             status.problems = check_scopes(credentials)

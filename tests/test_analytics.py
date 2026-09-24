@@ -262,7 +262,9 @@ def test_missing_token_exits_4_naming_auth(
 def test_token_with_scope_problems_exits_4(
     repo_root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli, "load_credentials", lambda path: creds(ANALYTICS_SCOPE, UPLOAD_SCOPE))
+    monkeypatch.setattr(
+        cli, "load_credentials", lambda path, **_: creds(ANALYTICS_SCOPE, UPLOAD_SCOPE)
+    )
     assert main(["collect", "--analytics"]) == EXIT_NO_OAUTH_TOKEN
     err = capsys.readouterr().err
     assert "yt-analytics-monetary.readonly" in err
@@ -276,9 +278,9 @@ def test_collect_analytics_cli_writes_rows_and_prints_no_money(
     _seed_own_videos(repo_root, ["vA", "vB"])
     transport = FakeAnalyticsTransport(Handler(reject_impressions=True))
     monkeypatch.setattr(
-        cli, "load_credentials", lambda path: creds(ANALYTICS_SCOPE, MONETARY_SCOPE)
+        cli, "load_credentials", lambda path, **_: creds(ANALYTICS_SCOPE, MONETARY_SCOPE)
     )
-    monkeypatch.setattr(cli, "make_analytics_transport", lambda credentials, dry_run: transport)
+    monkeypatch.setattr(cli, "make_analytics_transport", lambda *_args: transport)
     assert main(["collect", "--analytics", "--days", "30"]) == EXIT_OK
     out = capsys.readouterr().out
     assert "videos 2, days 2, traffic sources 2" in out

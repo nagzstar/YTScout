@@ -76,6 +76,7 @@ from ytscout.youtube import (
     GoogleTransport,
     Ledger,
     Transport,
+    tls,
 )
 from ytscout.youtube.analytics import (
     AnalyticsApi,
@@ -394,12 +395,20 @@ def recorded_run(conn: sqlite3.Connection, kind: str) -> Iterator[RunRecord]:
             repo.finish_run(conn, record.id, record.status)
 
 
+def _ca_certs_if_token(settings: Settings) -> Path | None:
+    """The CA bundle for a token refresh, or ``None`` when there is no token to refresh.
+
+    Building the bundle creates ``data/``; a run that stops for want of a token must not.
+    """
+    return tls.ca_bundle(settings.data_dir).path if settings.token_path.is_file() else None
+
+
 def make_transport(settings: Settings | None, dry_run: bool) -> Transport:
     """The Data API transport for a command. Tests replace this with a ``FakeTransport``."""
     if dry_run:
         return DryRunTransport()
     assert settings is not None
-    return GoogleTransport(settings.api_key)
+    return GoogleTransport(settings.api_key, ca_certs=tls.ca_bundle(settings.data_dir).path)
 
 
 def _dry_run_connection(db_path: Path) -> sqlite3.Connection:
@@ -553,11 +562,14 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
         conn.close()
 
 
-def make_analytics_transport(credentials: object, dry_run: bool) -> AnalyticsTransport:
+def make_analytics_transport(
+    credentials: object, dry_run: bool, settings: Settings | None = None
+) -> AnalyticsTransport:
     """The Analytics transport. Tests replace this with a ``FakeAnalyticsTransport``."""
     if dry_run:
         return DryRunAnalyticsTransport()
-    return GoogleAnalyticsTransport(credentials)
+    assert settings is not None
+    return GoogleAnalyticsTransport(credentials, ca_certs=tls.ca_bundle(settings.data_dir).path)
 
 
 def _auth_hint(settings: Settings) -> str:
@@ -645,7 +657,7 @@ def _collect_analytics(args: argparse.Namespace) -> int:
 
     assert settings is not None
     try:
-        credentials = load_credentials(settings.token_path)
+        credentials = load_credentials(settings.token_path, ca_certs=_ca_certs_if_token(settings))
     except TokenError as exc:
         print(f"collect: {exc}; {_auth_hint(settings)}", file=sys.stderr)
         return EXIT_NO_OAUTH_TOKEN
@@ -670,7 +682,7 @@ def _collect_analytics(args: argparse.Namespace) -> int:
                 "collecting channel-level rows only",
                 file=sys.stderr,
             )
-        api = AnalyticsApi(make_analytics_transport(credentials, False))
+        api = AnalyticsApi(make_analytics_transport(credentials, False, settings))
         with recorded_run(conn, "collect_analytics") as run:
             try:
                 counts = collect_analytics(api, conn, ids, start=start, end=end)
@@ -742,7 +754,7 @@ def cmd_auth(args: argparse.Namespace, _extras: list[str]) -> int:
         return EXIT_ERROR
     rel = _relative_to_root(settings)
     if args.status:
-        status = describe(settings.token_path)
+        status = describe(settings.token_path, ca_certs=_ca_certs_if_token(settings))
         print(f"token: {'present' if status.present else 'absent'} ({rel(settings.token_path)})")
         if not status.present:
             print("run `ytscout auth` to create one")
@@ -778,7 +790,11 @@ def cmd_auth(args: argparse.Namespace, _extras: list[str]) -> int:
             file=sys.stderr,
         )
         return EXIT_ERROR
-    credentials = run_consent_flow(settings.client_secret_path, settings.token_path)
+    credentials = run_consent_flow(
+        settings.client_secret_path,
+        settings.token_path,
+        ca_certs=tls.ca_bundle(settings.data_dir).path,
+    )
     print(f"token saved to {rel(settings.token_path)}")
     problems = check_scopes(credentials)
     if problems:
@@ -1550,6 +1566,12 @@ def cmd_doctor(_args: argparse.Namespace, _extras: list[str]) -> int:
         f"{_yes_no(settings.client_secret_path.is_file())}"
     )
     print(f"oauth token: {rel(settings.token_path)}: {_yes_no(settings.token_path.is_file())}")
+    try:
+        bundle = tls.ca_bundle(settings.data_dir)
+    except tls.TlsError as exc:
+        print(f"tls ca bundle: BROKEN - {exc}")
+        return EXIT_ERROR
+    print(f"tls ca bundle: {bundle.describe()}")
     return EXIT_OK
 
 
@@ -1592,7 +1614,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args, extras = parser.parse_known_args(argv)
     if extras and not getattr(args, "stub", False):
         parser.error(f"unrecognized arguments: {' '.join(extras)}")
-    return int(args.func(args, extras))
+    try:
+        return int(args.func(args, extras))
+    except tls.TlsError as exc:
+        print(f"{args.command}: {exc}", file=sys.stderr)
+        return EXIT_ERROR
 
 
 if __name__ == "__main__":

@@ -124,6 +124,7 @@ def test_doctor_exits_0_with_minimal_settings(tmp_path: Path) -> None:
     assert "YT_API_KEY: no" in out
     assert "client_secret.json: no" in out
     assert "token.json: no" in out
+    assert "tls ca bundle: " in out
     assert "UCtest123" not in out  # doctor reports presence, never values
 
 
