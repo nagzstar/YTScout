@@ -197,3 +197,44 @@ def latest_video_snapshot(conn: sqlite3.Connection, video_id: str) -> sqlite3.Ro
         " ORDER BY captured_at DESC, id DESC LIMIT 1",
         (video_id,),
     ).fetchone()
+
+
+# --- quota ledger -------------------------------------------------------------------------
+
+
+def quota_used(conn: sqlite3.Connection, day_pacific: str) -> int:
+    """Units charged on ``day_pacific`` (``YYYY-MM-DD``); 0 if the day has no row."""
+    row = conn.execute(
+        "SELECT units_used FROM quota_ledger WHERE day_pacific = ?", (day_pacific,)
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def add_quota_used(conn: sqlite3.Connection, day_pacific: str, units: int) -> None:
+    """Add ``units`` to the day's total, creating the row if needed."""
+    conn.execute(
+        "INSERT INTO quota_ledger (day_pacific, units_used) VALUES (?, ?)"
+        " ON CONFLICT(day_pacific) DO UPDATE SET units_used = units_used + excluded.units_used",
+        (day_pacific, units),
+    )
+
+
+# --- api cache ----------------------------------------------------------------------------
+
+
+def get_api_cache(conn: sqlite3.Connection, key: str) -> tuple[str | None, dict] | None:
+    """``(etag, body)`` cached under ``key``, or ``None``."""
+    row = conn.execute("SELECT etag, body_json FROM api_cache WHERE key = ?", (key,)).fetchone()
+    if row is None:
+        return None
+    return row["etag"], json.loads(row["body_json"])
+
+
+def put_api_cache(conn: sqlite3.Connection, key: str, etag: str | None, body: dict) -> None:
+    """Store or replace the response cached under ``key``."""
+    conn.execute(
+        "INSERT INTO api_cache (key, etag, body_json, fetched_at) VALUES (?, ?, ?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET etag = excluded.etag,"
+        " body_json = excluded.body_json, fetched_at = excluded.fetched_at",
+        (key, etag, json.dumps(body, sort_keys=True), now_utc()),
+    )

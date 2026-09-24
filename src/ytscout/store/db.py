@@ -5,8 +5,8 @@ keys on and ``sqlite3.Row`` rows, then applies every ``migrations/NNNN_*.sql`` n
 recorded in ``schema_migrations``, in order, each in its own transaction. Calling it again
 applies nothing.
 
-All timestamps are ISO-8601 UTC text (``YYYY-MM-DDTHH:MM:SSZ``). ``now_utc()`` is the only
-place in the package that reads the clock.
+All timestamps are ISO-8601 UTC text (``YYYY-MM-DDTHH:MM:SSZ``). ``utc_now()`` is the only
+place in the package that reads the clock; ``now_utc()`` formats it.
 """
 
 from __future__ import annotations
@@ -30,9 +30,14 @@ class MigrationError(Exception):
     """A migration file is misnamed or failed to apply."""
 
 
+def utc_now() -> datetime:
+    """The current time as an aware UTC datetime. Tests replace clocks built on this."""
+    return datetime.now(UTC)
+
+
 def now_utc() -> str:
     """The current time as ``YYYY-MM-DDTHH:MM:SSZ``."""
-    return to_utc_iso(datetime.now(UTC))
+    return to_utc_iso(utc_now())
 
 
 def to_utc_iso(value: datetime) -> str:

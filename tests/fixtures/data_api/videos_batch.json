@@ -1,0 +1,115 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "etag-videos-1",
+  "pageInfo": {
+    "totalResults": 5,
+    "resultsPerPage": 5
+  },
+  "items": [
+    {
+      "kind": "youtube#video",
+      "id": "vid00000001",
+      "snippet": {
+        "publishedAt": "2026-09-19T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #1",
+        "tags": [
+          "animals",
+          "top5"
+        ]
+      },
+      "statistics": {
+        "viewCount": "1000",
+        "likeCount": "10",
+        "commentCount": "1"
+      },
+      "contentDetails": {
+        "duration": "PT45S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "vid00000002",
+      "snippet": {
+        "publishedAt": "2026-09-18T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #2",
+        "tags": [
+          "animals",
+          "top5"
+        ]
+      },
+      "statistics": {
+        "viewCount": "2000",
+        "likeCount": "20",
+        "commentCount": "2"
+      },
+      "contentDetails": {
+        "duration": "PT59S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "vid00000003",
+      "snippet": {
+        "publishedAt": "2026-09-17T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #3",
+        "tags": [
+          "animals",
+          "top5"
+        ]
+      },
+      "statistics": {
+        "viewCount": "3000",
+        "likeCount": "30",
+        "commentCount": "3"
+      },
+      "contentDetails": {
+        "duration": "PT2M"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "vid00000004",
+      "snippet": {
+        "publishedAt": "2026-09-16T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #4",
+        "tags": [
+          "animals",
+          "top5"
+        ]
+      },
+      "statistics": {
+        "viewCount": "4000",
+        "likeCount": "40",
+        "commentCount": "4"
+      },
+      "contentDetails": {
+        "duration": "PT1H2M3S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "vid00000005",
+      "snippet": {
+        "publishedAt": "2026-09-15T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #5",
+        "tags": [
+          "animals",
+          "top5"
+        ]
+      },
+      "statistics": {
+        "viewCount": "5000",
+        "likeCount": "50",
+        "commentCount": "5"
+      },
+      "contentDetails": {
+        "duration": "P0D"
+      }
+    }
+  ]
+}

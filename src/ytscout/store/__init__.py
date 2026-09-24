@@ -5,6 +5,6 @@ Snapshot tables are append-only: no helper updates or deletes a snapshot row, an
 schema's triggers refuse it anyway.
 """
 
-from ytscout.store.db import DB_FILENAME, connect, default_db_path, now_utc, to_utc_iso
+from ytscout.store.db import DB_FILENAME, connect, default_db_path, now_utc, to_utc_iso, utc_now
 
-__all__ = ["DB_FILENAME", "connect", "default_db_path", "now_utc", "to_utc_iso"]
+__all__ = ["DB_FILENAME", "connect", "default_db_path", "now_utc", "to_utc_iso", "utc_now"]

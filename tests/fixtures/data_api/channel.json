@@ -1,0 +1,31 @@
+{
+  "kind": "youtube#channelListResponse",
+  "etag": "etag-channel-1",
+  "pageInfo": {
+    "totalResults": 1,
+    "resultsPerPage": 1
+  },
+  "items": [
+    {
+      "kind": "youtube#channel",
+      "id": "UCtestchannel0000000001",
+      "snippet": {
+        "title": "Test Animal Countdowns",
+        "publishedAt": "2024-03-01T12:00:00Z",
+        "country": "GB"
+      },
+      "statistics": {
+        "viewCount": "1234567",
+        "subscriberCount": "8900",
+        "hiddenSubscriberCount": false,
+        "videoCount": "42"
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "likes": "",
+          "uploads": "UUtestchannel0000000001"
+        }
+      }
+    }
+  ]
+}

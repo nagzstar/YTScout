@@ -1,0 +1,106 @@
+{
+  "kind": "youtube#playlistItemListResponse",
+  "etag": "etag-pl-1",
+  "nextPageToken": "CAUQAA",
+  "pageInfo": {
+    "totalResults": 7,
+    "resultsPerPage": 5
+  },
+  "items": [
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLI1",
+      "snippet": {
+        "publishedAt": "2026-09-19T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #1",
+        "playlistId": "UUtestchannel0000000001",
+        "position": 0,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "vid00000001"
+        }
+      },
+      "contentDetails": {
+        "videoId": "vid00000001",
+        "videoPublishedAt": "2026-09-19T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLI2",
+      "snippet": {
+        "publishedAt": "2026-09-18T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #2",
+        "playlistId": "UUtestchannel0000000001",
+        "position": 1,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "vid00000002"
+        }
+      },
+      "contentDetails": {
+        "videoId": "vid00000002",
+        "videoPublishedAt": "2026-09-18T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLI3",
+      "snippet": {
+        "publishedAt": "2026-09-17T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #3",
+        "playlistId": "UUtestchannel0000000001",
+        "position": 2,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "vid00000003"
+        }
+      },
+      "contentDetails": {
+        "videoId": "vid00000003",
+        "videoPublishedAt": "2026-09-17T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLI4",
+      "snippet": {
+        "publishedAt": "2026-09-16T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #4",
+        "playlistId": "UUtestchannel0000000001",
+        "position": 3,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "vid00000004"
+        }
+      },
+      "contentDetails": {
+        "videoId": "vid00000004",
+        "videoPublishedAt": "2026-09-16T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLI5",
+      "snippet": {
+        "publishedAt": "2026-09-15T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #5",
+        "playlistId": "UUtestchannel0000000001",
+        "position": 4,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "vid00000005"
+        }
+      },
+      "contentDetails": {
+        "videoId": "vid00000005",
+        "videoPublishedAt": "2026-09-15T10:00:00Z"
+      }
+    }
+  ]
+}

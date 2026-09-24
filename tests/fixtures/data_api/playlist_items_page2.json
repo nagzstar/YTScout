@@ -1,0 +1,49 @@
+{
+  "kind": "youtube#playlistItemListResponse",
+  "etag": "etag-pl-2",
+  "prevPageToken": "CAUQAQ",
+  "pageInfo": {
+    "totalResults": 7,
+    "resultsPerPage": 5
+  },
+  "items": [
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLI6",
+      "snippet": {
+        "publishedAt": "2026-09-14T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #6",
+        "playlistId": "UUtestchannel0000000001",
+        "position": 5,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "vid00000006"
+        }
+      },
+      "contentDetails": {
+        "videoId": "vid00000006",
+        "videoPublishedAt": "2026-09-14T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLI7",
+      "snippet": {
+        "publishedAt": "2026-09-13T10:00:00Z",
+        "channelId": "UCtestchannel0000000001",
+        "title": "Top 5 Animals #7",
+        "playlistId": "UUtestchannel0000000001",
+        "position": 6,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "vid00000007"
+        }
+      },
+      "contentDetails": {
+        "videoId": "vid00000007",
+        "videoPublishedAt": "2026-09-13T10:00:00Z"
+      }
+    }
+  ]
+}
