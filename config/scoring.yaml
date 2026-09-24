@@ -1,0 +1,5 @@
+# Scoring thresholds (DESIGN.md §6). Every threshold lives here, never in code.
+# 004 adds only the Shorts cut-off; 023 fills in the rest.
+
+# A video at or under this many seconds counts as a Short (YouTube allows Shorts up to 3 min).
+shorts_max_seconds: 180

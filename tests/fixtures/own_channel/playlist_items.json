@@ -1,0 +1,105 @@
+{
+  "kind": "youtube#playlistItemListResponse",
+  "etag": "etag-own-uploads",
+  "pageInfo": {
+    "totalResults": 5,
+    "resultsPerPage": 50
+  },
+  "items": [
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLIown0",
+      "snippet": {
+        "publishedAt": "2026-09-20T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #1",
+        "playlistId": "UUownchannel00000000001",
+        "position": 0,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "own00000001"
+        }
+      },
+      "contentDetails": {
+        "videoId": "own00000001",
+        "videoPublishedAt": "2026-09-20T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLIown1",
+      "snippet": {
+        "publishedAt": "2026-09-19T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #2",
+        "playlistId": "UUownchannel00000000001",
+        "position": 1,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "own00000002"
+        }
+      },
+      "contentDetails": {
+        "videoId": "own00000002",
+        "videoPublishedAt": "2026-09-19T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLIown2",
+      "snippet": {
+        "publishedAt": "2026-09-18T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #3",
+        "playlistId": "UUownchannel00000000001",
+        "position": 2,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "own00000003"
+        }
+      },
+      "contentDetails": {
+        "videoId": "own00000003",
+        "videoPublishedAt": "2026-09-18T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLIown3",
+      "snippet": {
+        "publishedAt": "2026-09-17T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #4",
+        "playlistId": "UUownchannel00000000001",
+        "position": 3,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "own00000004"
+        }
+      },
+      "contentDetails": {
+        "videoId": "own00000004",
+        "videoPublishedAt": "2026-09-17T10:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "id": "PLIown4",
+      "snippet": {
+        "publishedAt": "2026-09-16T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #5",
+        "playlistId": "UUownchannel00000000001",
+        "position": 4,
+        "resourceId": {
+          "kind": "youtube#video",
+          "videoId": "own00000005"
+        }
+      },
+      "contentDetails": {
+        "videoId": "own00000005",
+        "videoPublishedAt": "2026-09-16T10:00:00Z"
+      }
+    }
+  ]
+}

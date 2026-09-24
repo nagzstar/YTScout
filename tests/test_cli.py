@@ -65,8 +65,8 @@ def test_each_stub_exits_2_with_not_implemented_line(
 
 
 def test_stub_swallows_future_flags(capsys: pytest.CaptureFixture[str]) -> None:
-    """run_weekly.ps1 will call e.g. `collect --own --max-units 500`; that must still be a 2."""
-    assert main(["collect", "--own", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
+    """run_weekly.ps1 will call e.g. `discover --max-units 500`; that must still be a 2."""
+    assert main(["discover", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
     assert "not implemented" in capsys.readouterr().err
 
 
@@ -77,10 +77,10 @@ def test_doctor_rejects_unknown_flags(capsys: pytest.CaptureFixture[str]) -> Non
     assert "unrecognized arguments: --bogus" in capsys.readouterr().err
 
 
-def test_collect_via_subprocess_exits_2() -> None:
-    result = run_cli("collect")
-    assert result.returncode == EXIT_NOT_IMPLEMENTED
-    assert "ytscout collect: not implemented yet" in result.stderr
+def test_collect_own_without_max_units_refuses_via_subprocess(tmp_path: Path) -> None:
+    result = run_cli("collect", "--own", cwd=tmp_path)
+    assert result.returncode != EXIT_OK
+    assert "--max-units" in result.stderr
 
 
 def test_doctor_exits_1_without_settings(tmp_path: Path) -> None:

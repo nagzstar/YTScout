@@ -238,3 +238,19 @@ def put_api_cache(conn: sqlite3.Connection, key: str, etag: str | None, body: di
         " body_json = excluded.body_json, fetched_at = excluded.fetched_at",
         (key, etag, json.dumps(body, sort_keys=True), now_utc()),
     )
+
+
+# --- runs ---------------------------------------------------------------------------------
+
+
+def start_run(conn: sqlite3.Connection, kind: str) -> int:
+    """Insert a ``runs`` row started now; return its id."""
+    cur = conn.execute("INSERT INTO runs (started_at, kind) VALUES (?, ?)", (now_utc(), kind))
+    return int(cur.lastrowid or 0)
+
+
+def finish_run(conn: sqlite3.Connection, run_id: int, status: str) -> None:
+    """Stamp a ``runs`` row with ``finished_at`` = now and ``status``."""
+    conn.execute(
+        "UPDATE runs SET finished_at = ?, status = ? WHERE id = ?", (now_utc(), status, run_id)
+    )

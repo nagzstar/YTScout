@@ -1,0 +1,32 @@
+{
+  "kind": "youtube#channelListResponse",
+  "etag": "etag-own-channel",
+  "pageInfo": {
+    "totalResults": 1,
+    "resultsPerPage": 1
+  },
+  "items": [
+    {
+      "kind": "youtube#channel",
+      "id": "UCownchannel00000000001",
+      "snippet": {
+        "title": "Countdown Animal Kingdom (fixture)",
+        "customUrl": "@countdownanimalkingdom",
+        "publishedAt": "2025-01-10T09:00:00Z",
+        "country": "GB"
+      },
+      "statistics": {
+        "viewCount": "250000",
+        "subscriberCount": "1200",
+        "hiddenSubscriberCount": false,
+        "videoCount": "5"
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "likes": "",
+          "uploads": "UUownchannel00000000001"
+        }
+      }
+    }
+  ]
+}

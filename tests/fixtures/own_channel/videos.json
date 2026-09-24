@@ -1,0 +1,120 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "etag-own-videos",
+  "pageInfo": {
+    "totalResults": 5,
+    "resultsPerPage": 5
+  },
+  "items": [
+    {
+      "kind": "youtube#video",
+      "id": "own00000001",
+      "snippet": {
+        "publishedAt": "2026-09-20T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #1",
+        "description": "Fixture video 1.",
+        "categoryId": "15",
+        "tags": [
+          "animals",
+          "top5"
+        ]
+      },
+      "statistics": {
+        "viewCount": "1000",
+        "likeCount": "50",
+        "commentCount": "4"
+      },
+      "contentDetails": {
+        "duration": "PT45S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "own00000002",
+      "snippet": {
+        "publishedAt": "2026-09-19T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #2",
+        "description": "Fixture video 2.",
+        "categoryId": "15",
+        "tags": [
+          "animals",
+          "longform"
+        ]
+      },
+      "statistics": {
+        "viewCount": "2000",
+        "likeCount": "80",
+        "commentCount": "9"
+      },
+      "contentDetails": {
+        "duration": "PT3M20S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "own00000003",
+      "snippet": {
+        "publishedAt": "2026-09-18T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #3",
+        "description": "Fixture video 3.",
+        "categoryId": "15"
+      },
+      "statistics": {
+        "viewCount": "3000",
+        "likeCount": "90",
+        "commentCount": "12"
+      },
+      "contentDetails": {
+        "duration": "PT59S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "own00000004",
+      "snippet": {
+        "publishedAt": "2026-09-17T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #4",
+        "description": "Fixture video 4.",
+        "categoryId": "15",
+        "tags": [
+          "animals"
+        ]
+      },
+      "statistics": {
+        "viewCount": "4000",
+        "likeCount": "100",
+        "commentCount": "15"
+      },
+      "contentDetails": {
+        "duration": "PT3M"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "own00000005",
+      "snippet": {
+        "publishedAt": "2026-09-16T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 fixture #5",
+        "description": "Fixture video 5.",
+        "categoryId": "15",
+        "tags": [
+          "animals",
+          "sharks"
+        ]
+      },
+      "statistics": {
+        "viewCount": "5000",
+        "likeCount": "120",
+        "commentCount": "20"
+      },
+      "contentDetails": {
+        "duration": "PT30S"
+      }
+    }
+  ]
+}
