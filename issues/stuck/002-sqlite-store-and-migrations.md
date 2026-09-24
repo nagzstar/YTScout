@@ -60,3 +60,8 @@ instead of being overwritten by the second.
 `DESIGN.md §10` is the schema; the additions above are the only deviations and should be
 reflected there in the Outcome (say what you added and why). Keep the SQL plain — no
 SQLAlchemy.
+
+
+## Lazyboy
+
+Parked after two attempts: closed=False committed=False clean=True pushed=True subtype=success error=True. Last result: API Error: 400 Claude Code 2.1.267 does not support this model; version 2.1.280 or newer is required. Run 'claude update', or update the Claude desktop app, then try again.
