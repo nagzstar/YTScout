@@ -82,3 +82,36 @@ Next session: decide whether to rerun `discover --max-units 1300` today (≈1,22
 ideally after 034. Then approve towards ≥ 8, and close with the Outcome: approved list,
 rejection reasons, real cost, dashboard complaints (no undo; restart `serve` after code
 changes; Hits column needs a tooltip saying "search hits"; emoji titles render fine).
+
+## Progress (2026-09-24, session 2 — not closed)
+
+State when the session ended: worktree clean at the commit after `389c840`; dashboard
+rebuilt with 10 undecided candidates; the review server is not running.
+
+- **034 done first** (closed, `f563826`): hype words stripped, so the seeds are now
+  `top 5 land animals`, `top 5 animals`, `top 5 land` — 3 queries, ~607 units a run.
+- **Run 3** (12:45, 607 units): 221 hit channels, **0 new kept**. Replayed offline from
+  `api_cache`: with only two content words across the seeds, `keyword_overlap_min: 2`
+  meant "every query word", and the 8 channels that passed it were the 2 approved plus 6
+  real animal channels whose best hit was under 100,000 views.
+- **Threshold change** (`config/scoring.yaml`, `389c840`): `keyword_overlap_min: 1`. The
+  `topic_words` screen is the subject gate; overlap now only asks for one shared word.
+- **Run 4** (13:0x, 607 units): 221 hit channels, **12 kept** = 2 approved + **10 new**:
+  Top 5 Animal voice overs `UChCsRA41E4s-7vg-p2gP_iw`, LOWLIGHTS
+  `UCoImDDWjNbqX5SLNpFMVR8g`, CritterClipzLOL `UCSJPhVc02KDgAD4C1eM5lNQ`, Rufus Goodboy
+  `UC6T4TmdMIg3bPWd9at6vFRQ`, Tovo Ranks `UCJZdt-ER-peWnO4fnEhxRiQ`, Beast tier
+  `UCAXr04ES-_yMS24N-H4MQQA`, RankingvideosFunny `UCYTWqfll2WNqsKB2FXK7sgA`, AstroFact
+  `UCjB3HIgZAWu9lqOEfCpv1Jw`, Curious Bone `UCjot6Wj8aZqpHDZGJ1-_12Q`, CT_seeking
+  `UCwU15FLyzh0xArC398Mk4jw`. All ≥ 10k subs, 100 % Shorts hits, a hit ≥ 1.8M views,
+  English by tag. Dropped 209: 121 under 10k subs, 39 off topic, 17 no shared word,
+  16 rejected before, 12 no viral hit, 5 not English, 2 not Shorts.
+- **Quota**: `quota_ledger` 2026-09-24 = **3,637 units** (runs 1–4: 1,211 + 1,211 + 607
+  + 607, +1 wasted), against this issue's 2,500 grant. The overrun is the two runs the
+  filter rewrite needed.
+- **`top 5 land`** is still a junk query (200 units for NFL rankings and Vietnamese
+  property): a unigram that is not a topic word makes a poor seed. Candidate for a new
+  issue if the weekly refresh keeps it.
+
+Next: Nagz runs `.venv\Scripts\python.exe -m ytscout serve`, reviews the 10 at
+http://127.0.0.1:8765/ (≥ 6 more approvals reach the 8), notes dashboard complaints, then
+the Outcome closes the issue.
