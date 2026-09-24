@@ -2,8 +2,8 @@
 
 Everything the page needs is inlined at build time: the CSS and JS in ``base.html.j2``
 and the vendored Chart.js from ``static/chart.umd.js``. The only external references the
-page may carry are ``https://www.youtube.com/watch?v=`` links. Reads only; the DB is
-never written here.
+page may carry are ``https://www.youtube.com/watch?v=`` and ``/channel/`` links. Reads only;
+the DB is never written here.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ CHART_MONTHS = 12
 # fold into one "Other" line.
 CHART_SERIES = 8
 WATCH_URL = "https://www.youtube.com/watch?v="
+CHANNEL_URL = "https://www.youtube.com/channel/"
 
 # A source map comment would make devtools try to fetch chart.umd.js.map next to the page.
 _SOURCE_MAP = re.compile(r"^//# sourceMappingURL=.*$", re.MULTILINE)
@@ -342,7 +343,9 @@ def environment() -> Environment:
 
 def render(dash: Dashboard) -> str:
     template = environment().get_template("base.html.j2")
-    return template.render(d=dash, watch_url=WATCH_URL, chartjs=chartjs_source())
+    return template.render(
+        d=dash, watch_url=WATCH_URL, channel_url=CHANNEL_URL, chartjs=chartjs_source()
+    )
 
 
 def build(conn: sqlite3.Connection, out: Path, now: datetime | None = None) -> Dashboard:

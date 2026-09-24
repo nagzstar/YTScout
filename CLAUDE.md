@@ -50,7 +50,7 @@ CLI: `python -m ytscout <doctor|auth|collect|discover|packet|analyse|score|scout
 - Scoring lives in `src/ytscout/scoring/` as pure functions that take plain dataclasses and config dicts; it never imports the DB. All thresholds come from `config/scoring.yaml`, never hard-coded.
 - Swappable transports: every external client (`DataApi`, `AnalyticsApi`, transcripts, `claude_runner`) has a seam so tests run with no network. `DryRunTransport` backs every `--dry-run`.
 - Every Claude analysis stored in the DB records `prompt_hash` and `schema_hash`.
-- Dashboard is a single static `dashboard/index.html` built by Jinja2; Chart.js is vendored and inlined, no CDN, no external CSS/JS/fonts. The only external references allowed are `https://www.youtube.com/watch?v=` links.
+- Dashboard is a single static `dashboard/index.html` built by Jinja2; Chart.js is vendored and inlined, no CDN, no external CSS/JS/fonts. The only external references allowed are `https://www.youtube.com/watch?v=` and `https://www.youtube.com/channel/` links.
 - Windows is the target OS. Paths via `pathlib`; shell scripts are PowerShell 5.1-compatible.
 - Fail soft on transcripts and on Claude being unavailable: store what you have, mark the rest `pending`, keep going. Fail clean on quota: commit, checkpoint, exit 3. Fail hard on ledger corruption.
 - Commit messages: imperative, short, prefixed with the issue and milestone (`003 M0: quota ledger and Data API client`).

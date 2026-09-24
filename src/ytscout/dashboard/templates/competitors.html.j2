@@ -11,7 +11,7 @@
     <tbody>
     {% for c in d.candidates %}
       <tr data-channel-id="{{ c.id }}">
-        <td>{{ c.title or c.id }}</td>
+        <td><a href="{{ channel_url }}{{ c.id | urlencode }}">{{ c.title or c.id }}</a></td>
         <td class="num">{{ c.subs | number }}</td>
         <td class="num">{{ c.hit_count | number }}</td>
         <td>{% if c.reasons %}<ul class="reasons">{% for r in c.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% else %}–{% endif %}</td>
@@ -37,7 +37,7 @@
     <tbody>
     {% for c in d.approved %}
       <tr data-channel-id="{{ c.id }}">
-        <td>{{ c.title or c.id }}</td>
+        <td><a href="{{ channel_url }}{{ c.id | urlencode }}">{{ c.title or c.id }}</a></td>
         <td>{{ c.status }}</td>
         <td class="num">{{ c.subs | number }}</td>
       </tr>

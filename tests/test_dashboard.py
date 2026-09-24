@@ -27,7 +27,9 @@ MAX_BYTES = 5 * 1024 * 1024
 EXTERNAL_REF = re.compile(
     r"""(?:\b(?:src|href|action|poster|data)\s*=\s*["']?|url\(\s*["']?)(https?:|//)""", re.I
 )
-ALLOWED_HREF = re.compile(r"""href="https://www\.youtube\.com/watch\?v=[A-Za-z0-9_-]+\"""")
+ALLOWED_HREF = re.compile(
+    r"""href="https://www\.youtube\.com/(watch\?v=|channel/)[A-Za-z0-9_-]+\""""
+)
 
 
 def _seed(conn: sqlite3.Connection) -> None:
@@ -102,6 +104,9 @@ def test_build_from_seeded_db(seeded: Path, tmp_path: Path) -> None:
     for title in FIXTURE_TITLES:
         assert title in html
     assert html.count('href="https://www.youtube.com/watch?v=own0000000') == 5
+    for cid in ("UCcand1", "UCcand2", "UCappr"):
+        assert f'href="https://www.youtube.com/channel/{cid}"' in html
+    assert 'href="https://www.youtube.com/channel/UCrej"' not in html
     assert_self_contained(html)
 
 
@@ -173,6 +178,7 @@ def test_the_whitelist_catches_a_cdn(seeded: Path, tmp_path: Path) -> None:
         '<link rel="stylesheet" href="https://fonts.googleapis.com/x.css">',
         "<style>@import url(https://example.com/a.css);</style>",
         '<a href="https://www.youtube.com.evil.example/">x</a>',
+        '<a href="https://www.youtube.com/@handle">x</a>',
     ):
         with pytest.raises(AssertionError):
             assert_self_contained(html.replace("</body>", bad + "</body>"))
