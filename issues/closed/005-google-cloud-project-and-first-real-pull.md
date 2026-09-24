@@ -65,3 +65,48 @@ No `claude -p` calls. Never read `.env` or `scripts/.secrets/`; `ytscout.setting
 In the Outcome, record: how many videos the channel had, units each real run cost, and
 anything the API returned that surprised you (a missing field, a duration shape). Do not
 paste the key, the secret, or the channel's revenue anywhere in the repo.
+
+## Outcome (closed 2026-09-24)
+
+Delivered: `config/settings.yaml`, copied from the example with `own_channel_id` left
+empty so it falls back to `YT_CHANNEL_ID`. I wrote it because this issue's Scope asks for
+it, even though sessions normally leave `settings.yaml` to Nagz. The file is gitignored.
+Also delivered: a real `data/ytscout.sqlite` (gitignored), and new issue **033** for a
+permanent TLS fix. No code changed. Real Data API units spent: **10 of the 700 allowed**.
+
+What happened, in order:
+
+- `doctor`: exit 0. It printed `YT_API_KEY: yes`,
+  `client secret: scripts\.secrets\client_secret.json: yes`,
+  `oauth token: ...token.json: yes` and `own_channel_id: yes`, with no values shown. The
+  criterion's wording is "set" and "present", but the output says "yes". I treated that
+  as met, because the meaning is the same and no secret was printed.
+- `collect --own --dry-run`: 3 planned calls, 3 units, nothing written.
+- **The first real run failed:** `SSLCertVerificationError: CERTIFICATE_VERIFY_FAILED`.
+  Avast Web/Mail Shield intercepts HTTPS on this PC and re-signs it with its own root.
+  `httplib2` trusts only certifi, which does not contain that root. The run cost **1
+  unit**, because the ledger charges before the call is made, and it left `runs` row 1
+  with status `error`. A proper fix is more than two lines, so it is now issue 033.
+- **The workaround:** `HTTPLIB2_CA_CERTS=<scratch>\ca.pem`, a scratch bundle made of
+  certifi's `cacert.pem` plus `C:\ProgramData\Avast Software\Avast\wscert.pem`. This is
+  a public CA certificate, not a secret. With it set, both real runs worked:
+  - Run 2 (`--max-units 300`): exit 0, **3 units** (channels → playlistItems → videos).
+    It stored 1 channel, **7 videos** and 8 snapshots (1 channel, 7 video).
+  - Run 3 (`--max-units 300`): exit 0, **3 units**. `videos` stayed at 7,
+    `video_snapshots` went from 7 to **14** and `channel_snapshots` to 2.
+  - `quota_ledger`: one row, `('2026-09-23', 7)`. The ledger's day is Pacific time, so
+    it is still the 23rd there. Total 7 units, well under 300.
+- `git status` is clean. `git check-ignore -v` names `.gitignore:44:.secrets/` for
+  `scripts/.secrets/token.json` and `.gitignore:14:.env` for `.env`.
+  `git log --all -- .env scripts/.secrets` is empty, so neither has ever been committed.
+
+What the real API returned:
+
+- All 7 uploads are Shorts, from 51 s to 74 s. Every one has `categoryId` 15 (Pets &
+  Animals) and tags. The durations were all simple `PT#S` / `PT#M#S` forms, and no field
+  was missing, so the fixtures already covered every shape.
+- The uploads run daily from 2026-09-17 to 2026-09-23, mostly at 11:00 UTC.
+
+For the next session: every real API call from this PC needs `HTTPLIB2_CA_CERTS` set
+until 033 is done. Build the bundle the same way (certifi plus Avast's `wscert.pem`). 013
+and 014 (the weekly job) depend on 033 in practice, even though they do not list it.
