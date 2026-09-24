@@ -247,7 +247,7 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
     }).then(function (resp) {
       return resp.json().then(function (body) {
         if (resp.ok && body.ok) { location.reload(); return; }
-        say("Not saved: " + (body.error || resp.status));
+        say((body.saved ? "" : "Not saved: ") + (body.error || resp.status));
         btn.disabled = false;
       });
     }).catch(function () {

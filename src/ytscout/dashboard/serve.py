@@ -53,7 +53,11 @@ class ReviewServer(HTTPServer):
             conn.close()
 
     def decide(self, kind: str, target_id: str, decision: str) -> dict[str, str]:
-        """Record one decision; raise ``ValueError``/``LookupError`` and change nothing."""
+        """Record one decision; raise ``ValueError``/``LookupError`` and change nothing.
+
+        The caller rebuilds the page afterwards, so a render failure can never undo, or
+        leave unanswered, a decision that has already been committed.
+        """
         entry = {"ts": now_utc(), "kind": kind, "id": target_id, "decision": decision}
         conn = connect(self.db_path)
         try:
@@ -64,7 +68,6 @@ class ReviewServer(HTTPServer):
                     fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
         finally:
             conn.close()
-        self.rebuild()
         return entry
 
 
@@ -121,6 +124,22 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             return
         except sqlite3.Error as exc:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"database error: {exc}")
+            return
+        # The decision is committed. A rebuild failure (a template out of step with a
+        # running server, say) must still get a JSON answer: a dropped connection makes
+        # the browser retry the POST and record the click twice.
+        try:
+            self.server.rebuild()
+        except Exception as exc:  # noqa: BLE001 - report anything, drop nothing
+            self._json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "ok": False,
+                    "saved": True,
+                    "error": f"saved, but the page did not rebuild ({type(exc).__name__}: "
+                    f"{exc}); restart `ytscout serve` and refresh",
+                },
+            )
             return
         self._json(HTTPStatus.OK, {"ok": True})
 

@@ -142,6 +142,29 @@ def test_three_decisions_land_everywhere(
     assert "Channel UCb" not in html  # rejected hidden
 
 
+def test_rebuild_failure_still_answers_and_keeps_the_decision(
+    server: ReviewServer, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dropped connection makes browsers retry the POST, which double-records a click."""
+
+    def boom() -> None:
+        raise RuntimeError("template out of step")
+
+    monkeypatch.setattr(server, "rebuild", boom)
+    status, body = request(
+        server, "POST", "/decide", {"kind": "channel", "id": "UCa", "decision": "approved"}
+    )
+    assert status == 500
+    assert body["ok"] is False and body["saved"] is True
+    assert "template out of step" in body["error"]
+    assert statuses(db_path)["UCa"] == "approved"
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT count(*) FROM decisions").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
 def test_niche_decision_sets_niche_status(server: ReviewServer, db_path: Path) -> None:
     body = {"kind": "niche", "id": "7", "decision": "track"}
     assert request(server, "POST", "/decide", body) == (200, {"ok": True})
