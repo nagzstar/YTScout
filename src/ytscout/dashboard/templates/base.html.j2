@@ -56,6 +56,7 @@ ul.reasons { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px
 .actions { white-space: nowrap; }
 button { font: inherit; font-size: 13px; padding: 2px 8px; margin-right: 4px; }
 button:disabled { cursor: not-allowed; }
+.note { background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; padding: 8px 12px; }
 footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(--muted); font-size: 13px; }
 </style>
 </head>
@@ -129,6 +130,40 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
         y: { ticks: { color: muted }, grid: { color: line } }
       }
     }
+  });
+})();
+</script>
+<script>
+(function () {
+  "use strict";
+  // Review buttons: POST to `ytscout serve`, then reload. Opened from file:// there is no
+  // server to post to, so say how to start one instead.
+  var note = document.getElementById("serve-note");
+  var HINT = "start `ytscout serve` and open http://127.0.0.1:8765/";
+  function say(text) {
+    if (!note) { return; }
+    note.textContent = text;
+    note.hidden = false;
+  }
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest ? ev.target.closest("button[data-decision]") : null;
+    if (!btn) { return; }
+    if (location.protocol !== "http:") { say(HINT); return; }
+    btn.disabled = true;
+    fetch("/decide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: btn.dataset.kind, id: btn.dataset.id, decision: btn.dataset.decision })
+    }).then(function (resp) {
+      return resp.json().then(function (body) {
+        if (resp.ok && body.ok) { location.reload(); return; }
+        say("Not saved: " + (body.error || resp.status));
+        btn.disabled = false;
+      });
+    }).catch(function () {
+      say(HINT);
+      btn.disabled = false;
+    });
   });
 })();
 </script>

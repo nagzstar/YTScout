@@ -280,3 +280,47 @@ def finish_run(conn: sqlite3.Connection, run_id: int, status: str) -> None:
     conn.execute(
         "UPDATE runs SET finished_at = ?, status = ? WHERE id = ?", (now_utc(), status, run_id)
     )
+
+
+# --- decisions ----------------------------------------------------------------------------
+
+# What a person may decide, per target kind (008). Channel decisions are the channel status.
+DECISIONS: dict[str, tuple[str, ...]] = {
+    "channel": CHANNEL_STATUSES,
+    "niche": ("track", "shelve"),
+}
+
+
+def set_niche_status(conn: sqlite3.Connection, niche_id: int, status: str | None) -> None:
+    """Set a niche's review status (``track``/``shelve`` or ``None``)."""
+    if status is not None and status not in DECISIONS["niche"]:
+        raise ValueError(f"status must be one of {DECISIONS['niche']} or None, got {status!r}")
+    cur = conn.execute("UPDATE niches SET status = ? WHERE id = ?", (status, niche_id))
+    if cur.rowcount == 0:
+        raise LookupError(f"no niche {niche_id!r}")
+
+
+def record_decision(
+    conn: sqlite3.Connection, kind: str, target_id: str, decision: str, decided_at: str
+) -> None:
+    """Insert a ``decisions`` row and set the target's status to ``decision``.
+
+    Raises ``ValueError`` for an unknown kind or decision (or a non-integer niche id) and
+    ``LookupError`` when the target does not exist; the caller rolls back.
+    """
+    if kind not in DECISIONS:
+        raise ValueError(f"kind must be one of {tuple(DECISIONS)}, got {kind!r}")
+    if decision not in DECISIONS[kind]:
+        raise ValueError(f"decision for {kind} must be one of {DECISIONS[kind]}, got {decision!r}")
+    if kind == "channel":
+        set_channel_status(conn, target_id, decision)
+    else:
+        try:
+            niche_id = int(target_id)
+        except ValueError:
+            raise ValueError(f"niche id must be an integer, got {target_id!r}") from None
+        set_niche_status(conn, niche_id, decision)
+    conn.execute(
+        "INSERT INTO decisions (kind, target_id, decision, decided_at) VALUES (?, ?, ?, ?)",
+        (kind, target_id, decision, decided_at),
+    )

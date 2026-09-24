@@ -1,6 +1,7 @@
 <section id="competitors">
   <h2>Competitors</h2>
   <h3>Candidates ({{ d.candidates | length }})</h3>
+  <p id="serve-note" class="note" role="status" hidden></p>
   {% if d.candidates %}
   <div class="table-wrap">
   <table>
@@ -15,10 +16,10 @@
         <td class="num">{{ c.hit_count | number }}</td>
         <td>{% if c.reasons %}<ul class="reasons">{% for r in c.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% else %}–{% endif %}</td>
         <td class="actions">
-          {# 008 wires these to `ytscout serve`; until then they are inert. #}
-          <button type="button" disabled title="start `ytscout serve`" data-decision="approved">Approve</button>
-          <button type="button" disabled title="start `ytscout serve`" data-decision="rejected">Reject</button>
-          <button type="button" disabled title="start `ytscout serve`" data-decision="watch">Watch</button>
+          {# POST /decide to `ytscout serve` (008); from file:// the click shows #serve-note. #}
+          <button type="button" data-kind="channel" data-id="{{ c.id }}" data-decision="approved">Approve</button>
+          <button type="button" data-kind="channel" data-id="{{ c.id }}" data-decision="rejected">Reject</button>
+          <button type="button" data-kind="channel" data-id="{{ c.id }}" data-decision="watch">Watch</button>
         </td>
       </tr>
     {% endfor %}

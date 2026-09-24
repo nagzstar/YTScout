@@ -30,6 +30,7 @@ from ytscout.collect.discover import (
     queries_within,
     worst_case_units,
 )
+from ytscout.dashboard import serve as serve_mod
 from ytscout.scoring import (
     SCORING_RELPATH,
     ScoringConfigError,
@@ -70,10 +71,17 @@ STUBS: dict[str, tuple[str, str]] = {
     "analyse": ("run Claude analyses over packets", "017"),
     "score": ("compute scores from the DB", "024"),
     "scout": ("the niche pipeline: propose / validate / tag / snowball / sensitivity", "021"),
-    "serve": ("localhost review server for approve/reject", "008"),
 }
 
-COMMANDS: tuple[str, ...] = ("doctor", "collect", "discover", "dashboard", *STUBS, "audit")
+COMMANDS: tuple[str, ...] = (
+    "doctor",
+    "collect",
+    "discover",
+    "dashboard",
+    "serve",
+    *STUBS,
+    "audit",
+)
 
 DEFAULT_OWN_VIDEOS = 200
 # Shown in a --dry-run plan when config/settings.yaml does not exist yet.
@@ -130,6 +138,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"output file (default: <repo root>/{dashboard.DEFAULT_OUT_RELPATH.as_posix()})",
     )
     dash.set_defaults(func=cmd_dashboard)
+
+    serve = sub.add_parser(
+        "serve", help="localhost review server: approve/reject/watch from the dashboard"
+    )
+    serve.add_argument(
+        "--port",
+        type=int,
+        default=serve_mod.DEFAULT_PORT,
+        help=f"port on 127.0.0.1 (default {serve_mod.DEFAULT_PORT})",
+    )
+    serve.set_defaults(func=cmd_serve)
 
     for name, (help_text, issue) in STUBS.items():
         stub = sub.add_parser(name, help=f"{help_text} (issue {issue})")
@@ -547,17 +566,52 @@ def cmd_discover(args: argparse.Namespace, _extras: list[str]) -> int:
         conn.close()
 
 
-def cmd_dashboard(args: argparse.Namespace, _extras: list[str]) -> int:
-    """Render the dashboard from a read-only copy of the DB; an absent DB renders empty."""
+def _dashboard_db_path(command: str) -> tuple[Path, Path] | None:
+    """(repo root, DB path) from the settings, or the default when there are none yet."""
     root = find_repo_root()
     try:
         settings: Settings | None = load(repo_root=root)
     except SettingsMissing:
         settings = None
     except SettingsError as exc:
-        print(f"dashboard: {exc}", file=sys.stderr)
-        return EXIT_ERROR
+        print(f"{command}: {exc}", file=sys.stderr)
+        return None
     db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+    return root, db_path
+
+
+def cmd_serve(args: argparse.Namespace, _extras: list[str]) -> int:
+    """Serve the dashboard on 127.0.0.1 and record approve/reject/watch clicks until Ctrl-C."""
+    found = _dashboard_db_path("serve")
+    if found is None:
+        return EXIT_ERROR
+    root, db_path = found
+    out = root / dashboard.DEFAULT_OUT_RELPATH
+    try:
+        server = serve_mod.make_server(
+            db_path, out, db_path.parent / serve_mod.DECISIONS_FILENAME, port=args.port
+        )
+    except OSError as exc:
+        print(f"serve: cannot listen on 127.0.0.1:{args.port}: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        server.rebuild()
+        print(f"serve: reviewing {db_path}")
+        print(f"serve: open {server.url}  (Ctrl-C to stop)", flush=True)
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("serve: stopped")
+    finally:
+        server.server_close()
+    return EXIT_OK
+
+
+def cmd_dashboard(args: argparse.Namespace, _extras: list[str]) -> int:
+    """Render the dashboard from a read-only copy of the DB; an absent DB renders empty."""
+    found = _dashboard_db_path("dashboard")
+    if found is None:
+        return EXIT_ERROR
+    root, db_path = found
     out = args.out if args.out is not None else root / dashboard.DEFAULT_OUT_RELPATH
     if not db_path.is_file():
         print(f"note: no database at {db_path}; building an empty dashboard")

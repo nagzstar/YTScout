@@ -145,7 +145,17 @@ def test_candidates_sorted_by_score_and_approved_split(seeded: Path, tmp_path: P
     html = _build(seeded, tmp_path / "index.html")
     assert "Wild Tops &lt;5&gt;" in html  # escaped, not raw markup
     assert "Rejected Rivals" not in html
-    assert html.count('disabled title="start `ytscout serve`"') == 6  # 3 buttons x 2 rows
+    # 008: 3 live buttons x 2 candidate rows, each carrying what POST /decide needs.
+    buttons = re.findall(r"<button [^>]*>", html)
+    assert len(buttons) == 6
+    for tag in buttons:
+        assert 'data-kind="channel"' in tag
+        assert re.search(r'data-id="UCcand[12]"', tag)
+        assert re.search(r'data-decision="(approved|rejected|watch)"', tag)
+        assert "disabled" not in tag
+    assert 'data-id="UCcand1" data-decision="approved"' in html
+    assert 'id="serve-note"' in html
+    assert "http://127.0.0.1:8765/" in html
 
 
 def test_empty_db_renders_nothing_yet(tmp_path: Path) -> None:
