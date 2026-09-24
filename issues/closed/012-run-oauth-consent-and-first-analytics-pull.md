@@ -53,3 +53,28 @@ If Google says the app is unverified, that is expected for a personal Testing-mo
 click through Advanced → continue. If the token expires after 7 days (Testing mode does
 that), note it; issue 030's `doctor` will surface it, and the fix is moving the consent
 screen to Production, which needs no verification for these scopes on your own channel.
+
+## Outcome (closed 2026-09-24)
+
+- Consent screen: `yt-analytics-monetary.readonly` added to the `countdown-animal-kingdom`
+  project's scopes; the account is a test user. `ytscout auth` ran from the session with Nagz
+  clicking through the unverified-app warning. The new token carries exactly
+  `yt-analytics.readonly` and `yt-analytics-monetary.readonly`; `auth --status` reports
+  not expired, refresh token present, scope verdict ok.
+- **TLS on this PC**: the old pipeline token's refresh failed with `TransportError` because
+  google-auth's refresh goes through `requests` (certifi) and Avast re-signs HTTPS. Fixed for
+  this run by building `data/ca-bundle.pem` (certifi + Avast's `wscert.pem`, gitignored) and
+  setting **both** `REQUESTS_CA_BUNDLE` and `HTTPLIB2_CA_CERTS` to it. Issue 033 only knew
+  about the httplib2 side; a note has been added there.
+- `collect --analytics` (window 2025-08-20..2026-09-23): 4 queries, exit 0.
+  - `own_analytics`: 5 rows. Views, minutes watched, average view duration and percentage,
+    likes, subscriber delta populated 5/5. Revenue and RPM populated for 5/5 videos.
+    `impressions` and `ctr` were rejected by the API and are NULL (the retry-without path
+    worked). `monetized_playbacks` and `traffic_json` are NULL per video by design: the
+    collector stores those only at channel level (`own_daily`, `own_traffic`).
+  - The 3 own videos without a row are the ones published on 22, 23 and 24 September:
+    Analytics data lags ~2 days and the window ends on the 23rd. Not a bug; the next weekly
+    run picks them up.
+  - `own_daily`: 398 rows. `own_traffic`: 10 distinct sources.
+- Token is in Testing mode, so it may expire after 7 days. If so, `doctor` (030) surfaces it
+  and the fix is moving the consent screen to Production.
