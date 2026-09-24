@@ -73,6 +73,11 @@ class ReviewServer(HTTPServer):
 
 class ReviewHandler(SimpleHTTPRequestHandler):
     server: ReviewServer
+    # Browsers open speculative connections and send nothing on them. The server is
+    # single-threaded, so without a read timeout one idle socket stalls every other
+    # request until the browser gives up (seen: 7 s per click in 009). On loopback a real
+    # request's headers arrive at once, so a short timeout costs nothing.
+    timeout = 2.0
 
     def do_GET(self) -> None:  # noqa: N802 - http.server naming
         if self.path.split("?", 1)[0] == "/health":

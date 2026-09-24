@@ -5,8 +5,10 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import socket
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -163,6 +165,20 @@ def test_rebuild_failure_still_answers_and_keeps_the_decision(
         assert conn.execute("SELECT count(*) FROM decisions").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+def test_an_idle_connection_does_not_block_the_next_request(server: ReviewServer) -> None:
+    """Browsers preconnect and send nothing; the single-threaded server must not wait forever."""
+    idle = socket.create_connection((HOST, server.server_address[1]))
+    try:
+        time.sleep(0.2)  # let the server accept the idle socket and start waiting on it
+        started = time.monotonic()
+        status, body = request(server, "GET", "/health")
+        elapsed = time.monotonic() - started
+    finally:
+        idle.close()
+    assert (status, body["ok"]) == (200, True)
+    assert elapsed < 5, f"idle socket blocked the server for {elapsed:.1f}s"
 
 
 def test_niche_decision_sets_niche_status(server: ReviewServer, db_path: Path) -> None:
