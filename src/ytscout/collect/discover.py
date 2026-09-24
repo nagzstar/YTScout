@@ -2,16 +2,18 @@
 
 DESIGN.md §4.3. Own channel (1 unit) → ``search.list`` ×2 per query (100 units each) →
 ``channels.list`` for every distinct hit channel (1 unit per 50) → channel-level screen →
-``videos.list`` for the hits of channels still standing (1 unit per 50) → Shorts and
-viral-hit screens →
+``videos.list`` for the hits of channels still standing (1 unit per 50) → Shorts,
+viral-hit and language screens →
 survivors written as ``role='competitor'`` with ``discovery_json``. Nagz approves or
 rejects them later (007, 008); a ``rejected`` channel is never written again.
 """
 
 from __future__ import annotations
 
+import html
 import math
 import sqlite3
+from collections import Counter
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -179,7 +181,68 @@ def screen_channel(
         )
     else:
         verdict.reasons.append(f"keyword overlap {len(words)}: {', '.join(words)}")
-    verdict.kept = subs is not None and lo <= subs <= hi and len(words) >= cfg.keyword_overlap_min
+    topic = topic_words(c, cfg)
+    if topic:
+        verdict.reasons.append(f"topic: {', '.join(topic)}")
+    else:
+        verdict.reasons.append("no topic word in channel title, description or hit titles")
+    verdict.kept = (
+        subs is not None
+        and lo <= subs <= hi
+        and len(words) >= cfg.keyword_overlap_min
+        and bool(topic)
+    )
+    return verdict
+
+
+def topic_words(c: Candidate, cfg: DiscoveryConfig) -> list[str]:
+    """The configured topic words found in the channel title, description or hit titles.
+    Competitors compete for the same viewer, so an animal channel's rivals talk about
+    animals (009)."""
+    snippet = (c.item or {}).get("snippet") or {}
+    texts = [snippet.get("title") or "", snippet.get("description") or "", *c.hit_titles]
+    found = {word for text in texts for word in tokens(text)}
+    return sorted(found & set(cfg.topic_words))
+
+
+def language_tag(item: Mapping[str, Any]) -> str | None:
+    """The primary language subtag of a video or channel item (``en-GB`` → ``en``), audio
+    language first, or ``None`` when YouTube has no tag for it."""
+    snippet = item.get("snippet") or {}
+    tag = snippet.get("defaultAudioLanguage") or snippet.get("defaultLanguage")
+    return tag.split("-")[0].lower() if isinstance(tag, str) and tag else None
+
+
+def latin_share(texts: Sequence[str]) -> float:
+    """Share of the letters in ``texts`` that are Latin script; 1.0 when there are none."""
+    letters = [ch for text in texts for ch in html.unescape(text) if ch.isalpha()]
+    if not letters:
+        return 1.0
+    return sum(1 for ch in letters if ord(ch) < 0x0250) / len(letters)
+
+
+def screen_language(
+    verdict: Verdict, tags: Sequence[str], titles: Sequence[str], *, cfg: DiscoveryConfig
+) -> Verdict:
+    """Drop ``verdict`` unless the channel is in ``cfg.language``: by the hits' language
+    tags when YouTube has them (the most common one decides), else by the script of the
+    hit titles. Mutates and returns."""
+    if tags:
+        top, n = Counter(tags).most_common(1)[0]
+        ok = top == cfg.language
+        verdict.reasons.append(
+            f"language {top} ({n} of {len(tags)} tagged)"
+            if ok
+            else f"language {top} != {cfg.language} ({n} of {len(tags)} tagged)"
+        )
+    else:
+        share = latin_share(titles)
+        ok = share >= cfg.latin_share_min
+        verdict.reasons.append(
+            f"no language tag; titles {share:.0%} latin {'>=' if ok else '<'} "
+            f"{cfg.latin_share_min:.0%}"
+        )
+    verdict.kept = verdict.kept and ok
     return verdict
 
 
@@ -265,6 +328,7 @@ def discover(
                     query,
                     order=order,
                     published_after=published_after,
+                    relevance_language=cfg.language,
                     max_results=SEARCH_MAX_RESULTS,
                 )
                 result.searches += 1
@@ -299,6 +363,7 @@ def discover(
     for cid in standing:
         durations: list[int] = []
         views: list[int] = []
+        tags: list[str] = []
         for vid in result.candidates[cid].video_ids:
             item = videos.get(vid) or {}
             raw = (item.get("contentDetails") or {}).get("duration")
@@ -307,9 +372,13 @@ def discover(
             count = to_int((item.get("statistics") or {}).get("viewCount"))
             if count is not None:
                 views.append(count)
+            tag = language_tag(item)
+            if tag:
+                tags.append(tag)
         verdict = result.verdicts[cid]
         screen_format(verdict, durations, shorts_max_seconds=shorts_max_seconds, cfg=cfg)
         screen_views(verdict, views, cfg=cfg)
+        screen_language(verdict, tags, result.candidates[cid].hit_titles, cfg=cfg)
     _write(conn, result, videos, shorts_max_seconds)
     return result
 

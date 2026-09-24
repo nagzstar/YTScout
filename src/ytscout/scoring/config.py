@@ -47,23 +47,44 @@ class DiscoveryConfig:
     hit_views_min: int
     shorts_share_min: float
     keyword_overlap_min: int
+    topic_words: tuple[str, ...]
+    language: str
+    latin_share_min: float
 
 
 def discovery_config(config: dict[str, Any]) -> DiscoveryConfig:
-    """The ``discovery:`` section, every key required and non-negative."""
+    """The ``discovery:`` section: every key required; numbers non-negative, words
+    non-empty."""
     section = config.get("discovery")
     if not isinstance(section, dict):
         raise ScoringConfigError("scoring.yaml has no `discovery:` mapping")
     values: dict[str, Any] = {}
     for f in fields(DiscoveryConfig):
         value = section.get(f.name)
-        if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        if f.type == "str":
+            if not isinstance(value, str) or not value.strip():
+                raise ScoringConfigError(f"discovery.{f.name} must be a word, got {value!r}")
+            values[f.name] = value.strip().lower()
+        elif f.type == "tuple[str, ...]":
+            if (
+                not isinstance(value, list)
+                or not value
+                or not all(isinstance(w, str) and w.strip() for w in value)
+            ):
+                raise ScoringConfigError(
+                    f"discovery.{f.name} must be a non-empty list of words, got {value!r}"
+                )
+            values[f.name] = tuple(w.strip().lower() for w in value)
+        elif isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
             raise ScoringConfigError(
                 f"discovery.{f.name} must be a non-negative number in scoring.yaml, got {value!r}"
             )
-        values[f.name] = int(value) if f.type == "int" else float(value)
-    if values["shorts_share_min"] > 1:
-        raise ScoringConfigError("discovery.shorts_share_min must be ≤ 1 in scoring.yaml")
+        else:
+            values[f.name] = int(value) if f.type == "int" else float(value)
+    if values["shorts_share_min"] > 1 or values["latin_share_min"] > 1:
+        raise ScoringConfigError(
+            "discovery.shorts_share_min and latin_share_min must be ≤ 1 in scoring.yaml"
+        )
     if values["subs_max"] and values["subs_max"] < values["subs_min"]:
         raise ScoringConfigError("discovery.subs_max must be 0 (no cap) or ≥ subs_min")
     return DiscoveryConfig(**values)

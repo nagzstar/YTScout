@@ -93,6 +93,7 @@ class DataApi:
         order: str,
         published_after: datetime | str,
         video_duration: str | None = None,
+        relevance_language: str | None = None,
         max_results: int = 50,
     ) -> dict:
         """``search.list`` for videos. 100 units: use a channel or playlist call if one will do."""
@@ -108,6 +109,8 @@ class DataApi:
         }
         if video_duration is not None:
             params["videoDuration"] = video_duration
+        if relevance_language is not None:
+            params["relevanceLanguage"] = relevance_language
         return self._request("search", "list", **params)
 
     def channels(self, ids: Sequence[str], *, part: str = _PARTS) -> dict:

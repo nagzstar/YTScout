@@ -80,7 +80,7 @@ Given Nagz's channel, find the channels actually competing for the same audience
 1. Seed queries are derived from the own channel's recent titles and tags (e.g. "top 5 deadliest animals", "most dangerous animals shorts").
 2. `search.list` (type=video, order=viewCount and order=date, publishedAfter = 12 months) → candidate channel IDs. Budget: **≤ 20 searches per discovery run** (2,000 units).
 3. `channels.list` on candidates (1 unit each) → subs, video count, country, upload playlist.
-4. Similarity filter: same format (Shorts share ≥ 70% of recent uploads), overlapping topic keywords, ≥ 10,000 subscribers (no cap) and at least one hit with ≥ 100,000 views. (009 replaced the original 0.1×–10× size band: around a small own channel it returned 1-subscriber channels, and the point is to study channels that have already found an audience.)
+4. Similarity filter: same format (Shorts share ≥ 70% of recent uploads), overlapping topic keywords, ≥ 10,000 subscribers (no cap), at least one hit with ≥ 100,000 views, a topic word (configurable list; animals for this channel) in the channel title, description or a hit title, and English by video language tags or, failing those, Latin-script titles. (009 replaced the original 0.1×–10× size band: around a small own channel it returned 1-subscriber channels, and the point is to study channels that have already found an audience.)
 5. Present candidates in the dashboard with **approve / reject / watch**. Only approved channels are tracked weekly. Rejected IDs are remembered so they aren't re-suggested.
 
 ### 4.4 Metrics (per channel, per format, rolling 90 days and 12 months)

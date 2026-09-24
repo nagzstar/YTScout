@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,11 +20,12 @@ from ytscout.collect.discover import (
     discover,
     queries_within,
     screen_channel,
+    screen_language,
     screen_views,
     subs_band,
     worst_case_units,
 )
-from ytscout.scoring import DiscoveryConfig, discovery_config, load_scoring
+from ytscout.scoring import DiscoveryConfig, ScoringConfigError, discovery_config, load_scoring
 from ytscout.store import connect, repo
 from ytscout.text import STOP_WORDS, parse_keywords, query_terms, seed_queries, tokens
 from ytscout.youtube import DataApi, FakeTransport, Ledger
@@ -49,6 +51,9 @@ CFG = DiscoveryConfig(
     hit_views_min=100000,
     shorts_share_min=0.7,
     keyword_overlap_min=2,
+    topic_words=("animal", "animals", "snake", "snakes", "wildlife"),
+    language="en",
+    latin_share_min=0.9,
 )
 
 
@@ -71,6 +76,7 @@ def fixtures() -> dict:
             q="top 5 dangerous animals",
             order=order,
             publishedAfter=PUBLISHED_AFTER,
+            relevanceLanguage="en",
             maxResults=50,
         )
 
@@ -206,13 +212,7 @@ def test_query_terms_drop_the_prefix() -> None:
 
 def test_subs_band_is_absolute_and_uncapped_by_default() -> None:
     assert subs_band(CFG) == (10000, float("inf"))
-    capped = DiscoveryConfig(
-        subs_min=10000,
-        subs_max=5_000_000,
-        hit_views_min=1,
-        shorts_share_min=1,
-        keyword_overlap_min=1,
-    )
+    capped = replace(CFG, subs_max=5_000_000)
     assert subs_band(capped) == (10000, 5_000_000)
 
 
@@ -226,7 +226,55 @@ def test_screen_views_needs_one_viral_hit() -> None:
 
 
 def test_discovery_config_is_read_from_scoring_yaml() -> None:
-    assert discovery_config(load_scoring(REPO_ROOT / "config" / "scoring.yaml")) == CFG
+    real = discovery_config(load_scoring(REPO_ROOT / "config" / "scoring.yaml"))
+    assert replace(real, topic_words=CFG.topic_words) == CFG
+    assert {"animal", "animals", "wildlife"} <= set(real.topic_words)
+
+
+def test_discovery_config_rejects_bad_words() -> None:
+    good = load_scoring(REPO_ROOT / "config" / "scoring.yaml")
+    for key, bad in (("topic_words", []), ("topic_words", "animals"), ("language", "")):
+        broken = {**good, "discovery": {**good["discovery"], key: bad}}
+        with pytest.raises(ScoringConfigError):
+            discovery_config(broken)
+
+
+def test_off_topic_channel_is_dropped_before_videos_list() -> None:
+    c = Candidate(
+        "UCx",
+        video_ids=["v1", "v2"],
+        hit_titles=["Top 5 Viral Moments vs Reality", "Top 5 Viral vs Fails"],
+        item={"statistics": {"subscriberCount": "500000"}, "snippet": {"title": "Clips"}},
+    )
+    v = screen_channel(
+        c,
+        own_channel_id=OWN,
+        rejected=set(),
+        band=subs_band(CFG),
+        terms={"viral", "vs"},
+        cfg=CFG,
+    )
+    assert not v.kept
+    assert "no topic word in channel title, description or hit titles" in v.reasons
+    c.item["snippet"]["description"] = "Wildlife clips every day"
+    assert screen_channel(
+        c, own_channel_id=OWN, rejected=set(), band=subs_band(CFG), terms={"viral", "vs"}, cfg=CFG
+    ).kept
+
+
+def test_screen_language_uses_tags_then_script() -> None:
+    def fresh() -> Verdict:
+        return Verdict("UCx", kept=True, reasons=[])
+
+    v = screen_language(fresh(), ["en", "en", "hi"], ["x"], cfg=CFG)
+    assert v.kept and v.reasons == ["language en (2 of 3 tagged)"]
+    v = screen_language(fresh(), ["hi", "hi", "en"], ["x"], cfg=CFG)
+    assert not v.kept and v.reasons == ["language hi != en (2 of 3 tagged)"]
+    v = screen_language(fresh(), [], ["Top 5 Deadliest Snakes", "Dangerous Animals"], cfg=CFG)
+    assert v.kept and v.reasons == ["no language tag; titles 100% latin >= 90%"]
+    v = screen_language(fresh(), [], ["शीर्ष 5 खतरनाक जानवर", "Top 5"], cfg=CFG)
+    assert not v.kept and v.reasons[0].startswith("no language tag; titles ")
+    assert v.reasons[0].endswith("latin < 90%")
 
 
 def test_keyword_overlap_below_minimum_is_a_reason() -> None:
@@ -257,6 +305,7 @@ def test_filter_keeps_exactly_the_two_good_channels(conn: sqlite3.Connection) ->
     assert "subs 500 < 10,000 min" in reasons["UCsmall2"]
     assert "shorts share 0% < 70% of 2 hit(s)" in reasons["UClong"]
     assert "top hit 400,000 views >= 100,000" in reasons["UClong"]  # viral, but long-form
+    assert "topic: animals, snakes" in reasons["UClong"]
 
     good1 = result.verdicts["UCgood1"]
     assert (good1.hit_count, good1.keyword_overlap, good1.score) == (2, 2, 4)
@@ -278,12 +327,16 @@ def test_survivors_are_written_with_discovery_json_videos_and_snapshots(
         "reasons": [
             "subs 50,000 >= 10,000",
             "keyword overlap 2: animals, dangerous",
+            "topic: animals, snakes",
             "shorts share 100% >= 70% of 2 hit(s)",
             "top hit 900,000 views >= 100,000",
+            "language en (2 of 2 tagged)",
         ],
         "hit_count": 2,
         "matched_queries": ["top 5 dangerous animals"],
     }
+    good2 = json.loads(rows[1]["discovery_json"])["reasons"]
+    assert good2[-1] == "no language tag; titles 100% latin >= 90%"
     good1 = repo.get_channel(conn, "UCgood1")
     assert good1["uploads_playlist_id"] == "UUgood1"
     assert repo.latest_channel_snapshot(conn, "UCgood1")["subs"] == 50000

@@ -14,6 +14,57 @@ discovery:
   subs_max: 0
   # At least one search hit must have this many views: the channel has gone viral once.
   hit_views_min: 100000
+  # Competitors compete for the same viewer, so they must be about the same subject: at
+  # least one of these words (lower-case tokens) in the channel title, its description or
+  # a hit title. Edit freely; plurals are separate entries.
+  topic_words:
+    - animal
+    - animals
+    - wildlife
+    - creature
+    - creatures
+    - predator
+    - predators
+    - species
+    - beast
+    - beasts
+    - zoo
+    - snake
+    - snakes
+    - shark
+    - sharks
+    - lion
+    - lions
+    - tiger
+    - tigers
+    - bear
+    - bears
+    - wolf
+    - wolves
+    - elephant
+    - elephants
+    - crocodile
+    - crocodiles
+    - gorilla
+    - gorillas
+    - monkey
+    - monkeys
+    - spider
+    - spiders
+    - insect
+    - insects
+    - bird
+    - birds
+    - fish
+    - dog
+    - dogs
+    - cat
+    - cats
+  # ... and in this language. Video language tags decide when present (most hits must be
+  # tagged `language`); otherwise this share of the letters in the hit titles must be
+  # Latin script. search.list also gets relevanceLanguage=language, which is free.
+  language: en
+  latin_share_min: 0.9
   # Fraction of the channel's search hits at or under shorts_max_seconds.
   shorts_share_min: 0.7
   # Distinct query words that appear in the channel's hit titles.

@@ -10,7 +10,8 @@
         "channelId": "UCgood1",
         "title": "Top 5 Deadliest Snakes in the Amazon",
         "description": "",
-        "categoryId": "15"
+        "categoryId": "15",
+        "defaultAudioLanguage": "en-GB"
       },
       "statistics": {
         "viewCount": "900000",
@@ -29,7 +30,8 @@
         "channelId": "UCgood1",
         "title": "5 Most Dangerous Animals You've Never Seen",
         "description": "",
-        "categoryId": "15"
+        "categoryId": "15",
+        "defaultAudioLanguage": "en-GB"
       },
       "statistics": {
         "viewCount": "40000",
