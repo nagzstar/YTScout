@@ -12,8 +12,20 @@ import shlex
 from collections import Counter
 from collections.abc import Iterable, Sequence
 
-# Tokens that say "this is a countdown Short" rather than what the video is about.
-FORMAT_TOKENS = frozenset({"top", "5", "five", "countdown", "shorts", "#shorts"})
+# Tokens that say "this is a countdown Short" or "please click" rather than what the video
+# is about. They never seed a query and never count as keyword overlap: 009's real runs
+# built half their queries from the own titles' ``#Viral`` and ``#Versus`` hashtags, and
+# gaming and cricket channels passed the overlap check on ``viral, vs`` alone (034). Keep
+# the list explicit; ``tokens()`` does not lemmatise.
+FORMAT_TOKENS = frozenset(
+    {
+        "top", "5", "five", "countdown",
+        "shorts", "short", "#shorts",
+        "video", "videos", "clip", "clips", "compilation",
+        "viral", "trending",
+        "vs", "versus",
+    }
+)  # fmt: skip
 
 # 100 common English stop words.
 STOP_WORDS = frozenset(
@@ -93,8 +105,10 @@ def parse_keywords(raw: str | None) -> list[str]:
 def seed_queries(titles: Sequence[str], keywords: Sequence[str], max_queries: int) -> list[str]:
     """Search queries, most useful first: ``top 5 <2-gram>`` ×8, ``top 5 <1-gram>`` ×4, tags.
 
-    Tags are lower-cased and used as they are; a tag with nothing left after
-    ``tokens()`` (``"shorts"``, ``"top 5"``) is skipped. De-duplicated, then capped.
+    Every query carries at least one content word: n-grams are built from ``tokens()``
+    output, so ``top 5`` alone or ``top 5 viral`` can never be emitted. Tags are
+    lower-cased and used as they are; a tag with nothing left after ``tokens()``
+    (``"shorts"``, ``"viral"``, ``"top 5"``) is skipped. De-duplicated, then capped.
     """
     bigrams, unigrams = title_ngrams(titles)
     queries = [QUERY_PREFIX + gram for gram in [*bigrams, *unigrams]]

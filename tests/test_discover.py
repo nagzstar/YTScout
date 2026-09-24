@@ -156,6 +156,34 @@ def test_tokens_strip_numerals_format_tokens_and_stop_words() -> None:
     assert tokens("You&#39;ve never seen these") == ["you've", "never", "seen"]
 
 
+def test_tokens_strip_hype_and_format_words() -> None:
+    # 034: the own titles carry #Viral and #Versus; neither is a topic.
+    assert tokens("Top 5 Viral Animals vs Humans #shorts") == ["animals", "humans"]
+    assert tokens("Lion vs Spotted Hyena: Who Hits Harder? #Shorts #Viral #Versus") == [
+        "lion",
+        "spotted",
+        "hyena",
+        "hits",
+        "harder",
+    ]
+    assert tokens("Viral video compilation, trending clips, short") == []
+
+
+def test_seed_queries_never_emit_top_5_alone_or_a_hype_word() -> None:
+    titles = [
+        "Top 5 Viral Versus #Shorts #Viral #Versus",
+        "Top 5 Viral vs #Shorts #Viral #Versus",
+        "Top 5 Land Animals #Shorts #Viral #Top5",
+        "Top 5 Heaviest Land Animals #Shorts #Viral #Top5",
+    ]
+    assert seed_queries(titles, ["viral", "shorts", "top 5", "vs"], 10) == [
+        "top 5 land animals",
+        "top 5 land",
+        "top 5 animals",
+    ]
+    assert query_terms(seed_queries(titles, ["viral"], 10)) == {"land", "animals"}
+
+
 def test_parse_keywords_keeps_quoted_phrases() -> None:
     assert parse_keywords('animals "wild animals" shorts') == ["animals", "wild animals", "shorts"]
     assert parse_keywords("") == []
@@ -251,15 +279,37 @@ def test_off_topic_channel_is_dropped_before_videos_list() -> None:
         own_channel_id=OWN,
         rejected=set(),
         band=subs_band(CFG),
-        terms={"viral", "vs"},
+        terms={"moments", "reality"},
         cfg=CFG,
     )
     assert not v.kept
     assert "no topic word in channel title, description or hit titles" in v.reasons
     c.item["snippet"]["description"] = "Wildlife clips every day"
     assert screen_channel(
-        c, own_channel_id=OWN, rejected=set(), band=subs_band(CFG), terms={"viral", "vs"}, cfg=CFG
+        c,
+        own_channel_id=OWN,
+        rejected=set(),
+        band=subs_band(CFG),
+        terms={"moments", "reality"},
+        cfg=CFG,
     ).kept
+
+
+def test_hype_words_alone_never_satisfy_keyword_overlap() -> None:
+    # 034: a gaming channel whose hits share only "viral" and "vs" with the queries.
+    c = Candidate(
+        "UCx",
+        video_ids=["v1", "v2"],
+        hit_titles=["Top 5 Viral Gaming Moments vs Pros", "Viral vs Fails #shorts"],
+        item={"statistics": {"subscriberCount": "500000"}, "snippet": {"title": "Animals"}},
+    )
+    terms = query_terms(["top 5 viral", "top 5 vs", "top 5 viral versus", "top 5 snakes"])
+    assert terms == {"snakes"}
+    v = screen_channel(
+        c, own_channel_id=OWN, rejected=set(), band=subs_band(CFG), terms=terms, cfg=CFG
+    )
+    assert not v.kept
+    assert "keyword overlap 0 < 2 (-)" in v.reasons
 
 
 def test_screen_language_uses_tags_then_script() -> None:
