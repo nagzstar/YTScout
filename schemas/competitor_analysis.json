@@ -1,0 +1,229 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "competitor_analysis",
+  "description": "The weekly comparison of the own channel with its approved competitors (prompts/competitor_analysis.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "per_competitor",
+    "topic_gaps",
+    "our_weaknesses",
+    "next_videos",
+    "meta"
+  ],
+  "properties": {
+    "per_competitor": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "does_consistently",
+          "they_do_we_dont",
+          "we_do_they_dont"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string"
+          },
+          "does_consistently": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text",
+                "evidence_video_ids"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "evidence_video_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "they_do_we_dont": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text",
+                "evidence_video_ids"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "evidence_video_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "we_do_they_dont": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "text",
+                "evidence_video_ids"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "evidence_video_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "topic_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "topic",
+          "covered_by_channel_ids",
+          "evidence_video_ids",
+          "why"
+        ],
+        "properties": {
+          "topic": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "covered_by_channel_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2
+          },
+          "evidence_video_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "why": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    "our_weaknesses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pattern",
+          "below_median_video_ids",
+          "above_median_video_ids"
+        ],
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "below_median_video_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "above_median_video_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "next_videos": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "angle",
+          "evidence_video_ids",
+          "rationale"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "angle": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "evidence_video_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confidence",
+        "caveats"
+      ],
+      "properties": {
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "caveats": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    }
+  }
+}

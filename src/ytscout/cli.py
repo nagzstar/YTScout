@@ -8,6 +8,7 @@ can skip steps that no issue has delivered yet.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import platform
 import sqlite3
@@ -19,7 +20,13 @@ from pathlib import Path
 
 from ytscout import __version__, claude_runner, dashboard, packets
 from ytscout.analyse import DEFAULT_LIMIT as DEFAULT_SUMMARY_LIMIT
-from ytscout.analyse import summarise_videos, summary_paths
+from ytscout.analyse import (
+    analyse_competitors,
+    competitor_paths,
+    record_pending,
+    summarise_videos,
+    summary_paths,
+)
 from ytscout.audit import COVERAGE_RELPATH, STEPS_RELPATH, AuditError, format_table, run_audit
 from ytscout.collect import ChannelNotFound, Counts, collect_own
 from ytscout.collect.analytics import (
@@ -1174,18 +1181,44 @@ def _print_summary_plan(
     print("command: " + " ".join(argv[:1] + [f"{argv[1]} ..."] + argv[3:]))
 
 
+def _print_comparison_plan(conn: sqlite3.Connection, prompt_path: Path, schema_path: Path) -> None:
+    packet = packets.competitor_packet(conn)
+    size = len(json.dumps(packet, ensure_ascii=False).encode("utf-8"))
+    print("dry run: the competitor packet that would be compared (nothing is called or written)")
+    for c in packet["channels"]:
+        print(
+            f"  {c['id']} {c['title'] or ''}: {len(c['videos'])} summarised videos, "
+            f"role {c['role']}"
+        )
+    print(
+        f"channels: {len(packet['channels'])}; videos: {len(packets.packet_video_ids(packet))}; "
+        f"packet: {size:,} bytes ({packet['meta']['videos_per_channel']} videos per channel"
+        f"{', reduced' if packet['meta']['reduced'] else ''})"
+    )
+    reason = claude_runner.check_available()
+    print(f"claude: {'ok' if reason is None else reason}")
+    print(
+        f"prompt: {prompt_path.name} ({claude_runner.file_hash(prompt_path)}); "
+        f"schema: {schema_path.name} ({claude_runner.file_hash(schema_path)})"
+    )
+
+
 def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
-    """``analyse --summaries``: per-video summaries through ``claude -p``; exit 5 if absent."""
-    if args.competitors and not args.summaries:
-        print("ytscout analyse --competitors: not implemented yet (issue 017)", file=sys.stderr)
-        return EXIT_NOT_IMPLEMENTED
-    if not args.summaries:
-        print("analyse: pass --summaries (or --competitors, issue 017)", file=sys.stderr)
+    """``analyse --summaries`` and/or ``--competitors`` through ``claude -p``; exit 5 if absent.
+
+    With both flags the summaries run first and the comparison only if they succeeded.
+    """
+    if not (args.summaries or args.competitors):
+        print("analyse: pass --summaries and/or --competitors", file=sys.stderr)
         return EXIT_ERROR
 
     root = find_repo_root()
-    prompt_path, schema_path = summary_paths(root)
-    for path in (prompt_path, schema_path):
+    needed: list[Path] = []
+    if args.summaries:
+        needed.extend(summary_paths(root))
+    if args.competitors:
+        needed.extend(competitor_paths(root))
+    for path in needed:
         if not path.is_file():
             print(f"analyse: missing {path}", file=sys.stderr)
             return EXIT_ERROR
@@ -1205,11 +1238,14 @@ def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
     db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
 
     if args.dry_run:
-        # A migrated in-memory copy: the candidate query needs 0004's columns and a dry
-        # run must not migrate the real file.
+        # A migrated in-memory copy: the queries need 0004's columns and a dry run must
+        # not migrate the real file.
         copy = read_copy(db_path)
         try:
-            _print_summary_plan(copy, prompt_path, schema_path, args.limit)
+            if args.summaries:
+                _print_summary_plan(copy, *summary_paths(root), args.limit)
+            if args.competitors:
+                _print_comparison_plan(copy, *competitor_paths(root))
         finally:
             copy.close()
         return EXIT_OK
@@ -1217,35 +1253,104 @@ def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
     reason = claude_runner.check_available()
     if reason is not None:
         print(f"analyse: claude unavailable: {reason}", file=sys.stderr)
+        if args.competitors:
+            # The dashboard shows "analysis pending" from this row.
+            prompt_path, schema_path = competitor_paths(root)
+            conn = connect(db_path)
+            try:
+                with recorded_run(conn, "analyse_competitors") as run:
+                    run.status = "error"
+                    row_id = record_pending(
+                        conn,
+                        prompt_hash=claude_runner.file_hash(prompt_path),
+                        schema_hash=claude_runner.file_hash(schema_path),
+                        packet_path=None,
+                        reason=reason,
+                    )
+            finally:
+                conn.close()
+            print(f"analyse --competitors: row {row_id} pending")
         return EXIT_CLAUDE_UNAVAILABLE
 
     assert settings is not None
     conn = connect(db_path)
     try:
-        with recorded_run(conn, "analyse_summaries") as run:
-            counts = summarise_videos(
-                conn,
-                repo_root=root,
-                packets_dir=packets.packets_dir(settings.data_dir),
-                limit=args.limit,
-                model=settings.claude.model,
-                progress=print,
-            )
-            if counts.failure:
-                run.status = "error"
-        print(
-            f"analyse --summaries: {counts.done} of {counts.candidates} candidates summarised "
-            f"({counts.duration_s:.0f}s)"
-        )
-        if counts.failure:
-            print(
-                f"analyse: claude failed on {counts.failed_video_id}: {counts.failure}",
-                file=sys.stderr,
-            )
-            return EXIT_CLAUDE_UNAVAILABLE if counts.done == 0 else EXIT_ERROR
+        if args.summaries:
+            code = _run_summaries(args, conn, root, settings)
+            if code != EXIT_OK:
+                if args.competitors:
+                    print(
+                        "analyse: skipping --competitors after the summaries failed",
+                        file=sys.stderr,
+                    )
+                return code
+        if args.competitors:
+            return _run_competitors(conn, root, settings)
         return EXIT_OK
     finally:
         conn.close()
+
+
+def _run_summaries(
+    args: argparse.Namespace, conn: sqlite3.Connection, root: Path, settings: Settings
+) -> int:
+    with recorded_run(conn, "analyse_summaries") as run:
+        counts = summarise_videos(
+            conn,
+            repo_root=root,
+            packets_dir=packets.packets_dir(settings.data_dir),
+            limit=args.limit,
+            model=settings.claude.model,
+            progress=print,
+        )
+        if counts.failure:
+            run.status = "error"
+    print(
+        f"analyse --summaries: {counts.done} of {counts.candidates} candidates summarised "
+        f"({counts.duration_s:.0f}s)"
+    )
+    if counts.failure:
+        print(
+            f"analyse: claude failed on {counts.failed_video_id}: {counts.failure}",
+            file=sys.stderr,
+        )
+        return EXIT_CLAUDE_UNAVAILABLE if counts.done == 0 else EXIT_ERROR
+    return EXIT_OK
+
+
+def _run_competitors(conn: sqlite3.Connection, root: Path, settings: Settings) -> int:
+    """The comparison call; exit 5 (row ``pending``) when ``claude`` fails."""
+    with recorded_run(conn, "analyse_competitors") as run:
+        outcome = analyse_competitors(
+            conn,
+            repo_root=root,
+            packets_dir=packets.packets_dir(settings.data_dir),
+            model=settings.claude.model,
+        )
+        if outcome.failure:
+            run.status = "error"
+    packet_name = outcome.packet_path.name if outcome.packet_path else "-"
+    print(
+        f"analyse --competitors: {outcome.channels} channels, {outcome.videos} summarised "
+        f"videos, packet {packet_name}"
+    )
+    if outcome.failure:
+        print(f"analyse: claude failed: {outcome.failure}", file=sys.stderr)
+        print(f"analyse --competitors: row {outcome.row_id} pending")
+        return EXIT_CLAUDE_UNAVAILABLE
+    dropped = len(outcome.dropped_video_ids) + len(outcome.dropped_channel_ids)
+    if dropped:
+        print(
+            "analyse --competitors: dropped ids not in the packet: "
+            + ", ".join(outcome.dropped_video_ids + outcome.dropped_channel_ids)
+        )
+    usage = outcome.usage or {}
+    tokens = f"{usage.get('input_tokens', '?')} in / {usage.get('output_tokens', '?')} out"
+    print(
+        f"analyse --competitors: row {outcome.row_id} ok ({outcome.duration_s:.0f}s, "
+        f"tokens {tokens}, {dropped} unknown id(s) dropped)"
+    )
+    return EXIT_OK
 
 
 def _make_stub(name: str, issue: str):

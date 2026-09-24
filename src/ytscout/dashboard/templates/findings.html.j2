@@ -1,5 +1,108 @@
 <section id="findings">
   <h2>Findings</h2>
-  {# Placeholder: issue 017 fills this section. #}
-  <p class="empty">Nothing yet.</p>
+  {% if not d.findings %}
+  <p class="empty">Nothing yet. Run <code>ytscout analyse --summaries</code>, then <code>ytscout analyse --competitors</code>.</p>
+  {% elif d.findings.status != "ok" %}
+  <p class="note">analysis pending — <code>claude</code> was unavailable at {{ d.findings.run_at | clock }}{% if d.findings.error %} ({{ d.findings.error }}){% endif %}.</p>
+  {% else %}
+  {% set f = d.findings %}
+  {% set a = f.analysis %}
+  {% macro evidence(ids) -%}
+    {%- if ids -%}
+    <ul class="evidence">
+      {%- for id in ids -%}
+      <li><a href="{{ watch_url }}{{ id | urlencode }}">{{ f.titles.get(id) or id }}</a></li>
+      {%- endfor -%}
+    </ul>
+    {%- else -%}
+    <span class="muted">no evidence cited</span>
+    {%- endif -%}
+  {%- endmacro %}
+  <p class="muted">
+    Run {{ f.run_at }} · prompt <code>{{ f.prompt_hash }}</code> · schema <code>{{ f.schema_hash or "–" }}</code>
+    · confidence <strong>{{ a.meta.confidence }}</strong>
+  </p>
+  {% if a.meta.caveats %}
+  <details open>
+    <summary>Caveats ({{ a.meta.caveats | length }})</summary>
+    <ul class="reasons">{% for c in a.meta.caveats %}<li>{{ c }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+
+  <h3>Next 5 videos</h3>
+  <ol class="next-videos">
+    {% for v in a.next_videos %}
+    <li class="panel next-video">
+      <strong class="next-title">{{ v.title }}</strong>
+      <p class="angle">{{ v.angle }}</p>
+      <p class="muted">{{ v.rationale }}</p>
+      {{ evidence(v.evidence_video_ids) }}
+    </li>
+    {% endfor %}
+  </ol>
+
+  <h3>Topic gaps ({{ a.topic_gaps | length }})</h3>
+  {% if a.topic_gaps %}
+  <div class="table-wrap">
+  <table class="topic-gaps">
+    <thead><tr><th>Topic</th><th>Covered by</th><th>Why</th><th>Evidence</th></tr></thead>
+    <tbody>
+    {% for g in a.topic_gaps %}
+      <tr>
+        <td>{{ g.topic }}</td>
+        <td>{% for cid in g.covered_by_channel_ids %}{{ f.channel_titles.get(cid) or cid }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        <td>{{ g.why }}</td>
+        <td>{{ evidence(g.evidence_video_ids) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">None found.</p>
+  {% endif %}
+
+  <h3>Our weaknesses ({{ a.our_weaknesses | length }})</h3>
+  {% if a.our_weaknesses %}
+  <div class="table-wrap">
+  <table class="weaknesses">
+    <thead><tr><th>Pattern</th><th>Below median</th><th>Above median</th></tr></thead>
+    <tbody>
+    {% for w in a.our_weaknesses %}
+      <tr>
+        <td>{{ w.pattern }}</td>
+        <td>{{ evidence(w.below_median_video_ids) }}</td>
+        <td>{{ evidence(w.above_median_video_ids) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">None found.</p>
+  {% endif %}
+
+  <h3>Per competitor ({{ a.per_competitor | length }})</h3>
+  {% if a.per_competitor %}
+  {% for c in a.per_competitor %}
+  <div class="panel competitor-card" data-channel-id="{{ c.channel_id }}">
+    <h4>{{ f.channel_titles.get(c.channel_id) or c.channel_id }}</h4>
+    {% for label, items in [("Does consistently", c.does_consistently), ("They do, we don't", c.they_do_we_dont), ("We do, they don't", c.we_do_they_dont)] %}
+    <h5>{{ label }}</h5>
+    {% if items %}
+    <ul class="observations">
+      {% for o in items %}
+      <li>{{ o.text }} {{ evidence(o.evidence_video_ids) }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">Nothing solid.</p>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="empty">No competitor had summarised videos in the packet.</p>
+  {% endif %}
+  {% endif %}
 </section>

@@ -110,3 +110,114 @@ def write_packet(kind: str, payload: dict, directory: Path) -> Path:
     path = directory / f"{prefix}{max(used, default=0) + 1}.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+# --- competitor packet (017) -----------------------------------------------------------------
+
+COMPETITOR_VIDEOS = 15
+COMPETITOR_VIDEOS_REDUCED = 10
+COMPETITOR_PACKET_MAX_BYTES = 150_000
+COMPETITOR_WINDOW = "90d"
+COMPETITOR_FORMAT = "shorts"
+# Video ids the metrics carry need not be summarised videos; the prompt says every cited
+# id must be a packet video, so the list stays out.
+_METRIC_KEYS_DROPPED = ("outlier_ids",)
+
+
+def _median(values: list[int]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return float(ordered[mid])
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _competitor_channel(
+    conn: sqlite3.Connection,
+    channel: sqlite3.Row,
+    metrics: dict | None,
+    videos_per_channel: int,
+) -> dict:
+    snap = repo.latest_channel_snapshot(conn, channel["id"])
+    videos = []
+    for row in repo.summarised_videos_for_channel(conn, channel["id"], videos_per_channel):
+        videos.append(
+            {
+                "video_id": row["id"],
+                "title": row["title"],
+                "views": row["views"],
+                "published_at": row["published_at"],
+                "duration_s": row["duration_s"],
+                "transcript_status": row["transcript_status"],
+                "summary": json.loads(row["summary_json"]) if row["summary_json"] else None,
+            }
+        )
+    views = [v["views"] for v in videos if v["views"] is not None]
+    return {
+        "id": channel["id"],
+        "title": channel["title"],
+        "role": "own" if channel["role"] == "own" else "competitor",
+        "subs": snap["subs"] if snap else None,
+        "metrics": metrics,
+        "views_median": _median(views),
+        "videos": videos,
+    }
+
+
+def competitor_packet(conn: sqlite3.Connection) -> dict:
+    """The own channel and every ``approved`` channel with their summarised videos.
+
+    Each channel carries its latest 90-day Shorts ``channel_metrics`` (``None`` when not
+    scored) and its last ``COMPETITOR_VIDEOS`` summarised videos. When the JSON would be
+    over ``COMPETITOR_PACKET_MAX_BYTES`` the packet is rebuilt with
+    ``COMPETITOR_VIDEOS_REDUCED`` per channel and ``meta.reduced`` says so.
+    """
+    channels = [
+        c for c in repo.tracked_channels(conn) if c["role"] == "own" or c["status"] == "approved"
+    ]
+    metrics: dict[str, dict] = {}
+    for row in repo.latest_channel_metrics(conn):
+        if row["window"] == COMPETITOR_WINDOW and row["format"] == COMPETITOR_FORMAT:
+            m = json.loads(row["metrics_json"])
+            for key in _METRIC_KEYS_DROPPED:
+                m.pop(key, None)
+            metrics[row["channel_id"]] = m
+    own_id = next((c["id"] for c in channels if c["role"] == "own"), None)
+
+    def build(per_channel: int, reduced: bool) -> dict:
+        note = None
+        if reduced:
+            note = (
+                f"videos per channel cut from {COMPETITOR_VIDEOS} to {per_channel} to keep "
+                f"the packet under {COMPETITOR_PACKET_MAX_BYTES:,} bytes"
+            )
+        return {
+            "own_channel_id": own_id,
+            "meta": {
+                "built_at": utc_now().isoformat(timespec="seconds").replace("+00:00", "Z"),
+                "metrics_window": COMPETITOR_WINDOW,
+                "metrics_format": COMPETITOR_FORMAT,
+                "videos_per_channel": per_channel,
+                "reduced": reduced,
+                "note": note,
+            },
+            "channels": [
+                _competitor_channel(conn, c, metrics.get(c["id"]), per_channel) for c in channels
+            ],
+        }
+
+    packet = build(COMPETITOR_VIDEOS, reduced=False)
+    if len(json.dumps(packet, ensure_ascii=False).encode("utf-8")) > COMPETITOR_PACKET_MAX_BYTES:
+        packet = build(COMPETITOR_VIDEOS_REDUCED, reduced=True)
+    return packet
+
+
+def packet_video_ids(packet: dict) -> set[str]:
+    """Every ``video_id`` a competitor packet lists."""
+    return {v["video_id"] for c in packet.get("channels", []) for v in c.get("videos", [])}
+
+
+def packet_channel_ids(packet: dict) -> set[str]:
+    return {c["id"] for c in packet.get("channels", [])}

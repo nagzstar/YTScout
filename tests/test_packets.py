@@ -16,7 +16,6 @@ from ytscout.claude_runner import file_hash
 from ytscout.cli import (
     EXIT_CLAUDE_UNAVAILABLE,
     EXIT_ERROR,
-    EXIT_NOT_IMPLEMENTED,
     EXIT_OK,
     main,
 )
@@ -350,9 +349,8 @@ def test_cli_analyse_dry_run_lists_and_calls_nothing(
     assert fake_claude.record()["argv"] == ["--version"]  # only the version check ran
 
 
-def test_cli_analyse_competitors_is_still_a_stub(
+def test_cli_analyse_without_a_stage_is_an_error(
     repo_root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["analyse", "--competitors"]) == EXIT_NOT_IMPLEMENTED
-    assert "not implemented yet (issue 017)" in capsys.readouterr().err
     assert main(["analyse"]) == EXIT_ERROR
+    assert "pass --summaries and/or --competitors" in capsys.readouterr().err

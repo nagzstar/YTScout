@@ -57,6 +57,9 @@ class Dashboard:
     metrics_at: str | None = None
     # {"labels": ["YYYY-MM", ...], "series": [{"name", "own", "data"}]}: views by publish month.
     monthly: dict[str, Any] = field(default_factory=dict)
+    # The latest competitor analysis (017): status, run_at, hashes, the grounded analysis
+    # and the id → title maps the Findings section links with. None when never run.
+    findings: dict[str, Any] | None = None
 
 
 def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -157,7 +160,55 @@ def load(conn: sqlite3.Connection, now: datetime | None = None) -> Dashboard:
         )
     ]
     _load_metrics(conn, dash, moment)
+    _load_findings(conn, dash)
     return dash
+
+
+_ID_LIST_SUFFIXES = ("_video_ids",)
+
+
+def _cited_video_ids(value: Any) -> set[str]:
+    ids: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key.endswith(_ID_LIST_SUFFIXES) and isinstance(item, list):
+                ids.update(str(v) for v in item)
+            else:
+                ids |= _cited_video_ids(item)
+    elif isinstance(value, list):
+        for item in value:
+            ids |= _cited_video_ids(item)
+    return ids
+
+
+def _load_findings(conn: sqlite3.Connection, dash: Dashboard) -> None:
+    """The latest ``competitor_analyses`` row, with titles for every id it cites."""
+    row = repo.latest_competitor_analysis(conn)
+    if row is None:
+        return
+    result = json.loads(row["result_json"]) if row["result_json"] else {}
+    findings: dict[str, Any] = {
+        "status": row["status"],
+        "run_at": row["run_at"],
+        "prompt_hash": row["prompt_hash"],
+        "schema_hash": row["schema_version"],
+        "error": result.get("error") if row["status"] != "ok" else None,
+        "analysis": None,
+        "titles": {},
+        "channel_titles": {},
+    }
+    if row["status"] == "ok":
+        findings["analysis"] = result
+        findings["titles"] = repo.video_titles(conn, _cited_video_ids(result))
+        channel_ids = {c["channel_id"] for c in result.get("per_competitor", [])}
+        for gap in result.get("topic_gaps", []):
+            channel_ids.update(gap.get("covered_by_channel_ids", []))
+        titles: dict[str, str | None] = {}
+        for channel_id in channel_ids:
+            channel = repo.get_channel(conn, channel_id)
+            titles[channel_id] = channel["title"] if channel else None
+        findings["channel_titles"] = titles
+    dash.findings = findings
 
 
 def _metric_row(channel: sqlite3.Row, own_id: str | None, m: dict[str, Any]) -> dict[str, Any]:
@@ -258,6 +309,12 @@ def _day(timestamp: Any) -> str:
     return "–" if not timestamp else str(timestamp)[:10]
 
 
+def _clock(timestamp: Any) -> str:
+    """``HH:MM UTC`` from an ISO timestamp (the pending-analysis note)."""
+    text = str(timestamp or "")
+    return f"{text[11:16]} UTC" if len(text) >= 16 and text[10] == "T" else (text or "–")
+
+
 def chartjs_source(path: Path = CHARTJS_PATH) -> str:
     """The vendored Chart.js, ready to sit inside a ``<script>`` block."""
     source = _SOURCE_MAP.sub("", path.read_text(encoding="utf-8"))
@@ -277,6 +334,7 @@ def environment() -> Environment:
     env.filters["number"] = _number
     env.filters["duration"] = _duration
     env.filters["day"] = _day
+    env.filters["clock"] = _clock
     env.filters["decimal"] = _decimal
     env.filters["percent"] = _percent
     return env

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 
 from ytscout.store.db import now_utc, to_utc_iso
@@ -567,4 +567,78 @@ def get_video_summary(
     return conn.execute(
         "SELECT * FROM video_summaries WHERE video_id = ? AND prompt_hash = ?",
         (video_id, prompt_hash),
+    ).fetchone()
+
+
+# --- competitor analyses (017) --------------------------------------------------------------
+
+
+def summarised_videos_for_channel(
+    conn: sqlite3.Connection, channel_id: str, limit: int
+) -> list[sqlite3.Row]:
+    """The channel's newest videos that have a summary, with the latest summary and views.
+
+    One row per video: the summary row with the newest ``created_at`` (whatever its
+    prompt hash) and the latest snapshot's views.
+    """
+    return conn.execute(
+        """
+        SELECT v.id, v.title, v.published_at, v.duration_s, v.is_short,
+               s.summary_json, s.prompt_hash, s.transcript_status,
+               (SELECT views FROM video_snapshots x WHERE x.video_id = v.id
+                 ORDER BY x.captured_at DESC, x.id DESC LIMIT 1) AS views
+        FROM videos v JOIN video_summaries s ON s.rowid = (
+            SELECT rowid FROM video_summaries y WHERE y.video_id = v.id
+             ORDER BY y.created_at DESC, y.rowid DESC LIMIT 1)
+        WHERE v.channel_id = ?
+        ORDER BY v.published_at DESC, v.id
+        LIMIT ?
+        """,
+        (channel_id, limit),
+    ).fetchall()
+
+
+def video_titles(conn: sqlite3.Connection, video_ids: Iterable[str]) -> dict[str, str | None]:
+    """``{video_id: title}`` for the ids that exist in ``videos``."""
+    ids = sorted(set(video_ids))
+    out: dict[str, str | None] = {}
+    for start in range(0, len(ids), 500):
+        chunk = ids[start : start + 500]
+        marks = ",".join("?" * len(chunk))
+        for row in conn.execute(f"SELECT id, title FROM videos WHERE id IN ({marks})", chunk):
+            out[row["id"]] = row["title"]
+    return out
+
+
+def put_competitor_analysis(
+    conn: sqlite3.Connection,
+    *,
+    prompt_hash: str,
+    schema_hash: str,
+    packet_path: str | None,
+    result: dict | None,
+    status: str,
+    run_at: str | datetime | None = None,
+) -> int:
+    """Append one ``competitor_analyses`` row (``schema_version`` holds the schema hash)."""
+    cur = conn.execute(
+        "INSERT INTO competitor_analyses"
+        " (run_at, prompt_hash, schema_version, packet_path, result_json, status)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            _ts(run_at) or now_utc(),
+            prompt_hash,
+            schema_hash,
+            packet_path,
+            None if result is None else json.dumps(result, ensure_ascii=False, sort_keys=True),
+            status,
+        ),
+    )
+    return int(cur.lastrowid or 0)
+
+
+def latest_competitor_analysis(conn: sqlite3.Connection) -> sqlite3.Row | None:
+    """The newest ``competitor_analyses`` row of any status."""
+    return conn.execute(
+        "SELECT * FROM competitor_analyses ORDER BY run_at DESC, id DESC LIMIT 1"
     ).fetchone()
