@@ -37,6 +37,8 @@ from ytscout.collect.discover import (
     queries_within,
     worst_case_units,
 )
+from ytscout.collect.transcripts import DEFAULT_LIMIT as DEFAULT_TRANSCRIPT_LIMIT
+from ytscout.collect.transcripts import collect_transcripts
 from ytscout.dashboard import serve as serve_mod
 from ytscout.score import WINDOWS, score_competitors
 from ytscout.scoring import (
@@ -149,6 +151,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--analytics",
         action="store_true",
         help="own-channel YouTube Analytics (OAuth): per-video totals, per-day, traffic sources",
+    )
+    collect.add_argument(
+        "--transcripts",
+        action="store_true",
+        help="transcripts of own and approved/watch videos not yet fetched (no Data API units)",
+    )
+    collect.add_argument(
+        "--limit",
+        type=_positive_int,
+        default=DEFAULT_TRANSCRIPT_LIMIT,
+        help=f"--transcripts: videos to try this run (default {DEFAULT_TRANSCRIPT_LIMIT})",
     )
     collect.add_argument(
         "--days",
@@ -368,12 +381,16 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
 
     Exit 3 when a quota cap stops the run; everything collected before it is committed.
     """
-    if [args.own, args.competitors, args.analytics].count(True) != 1:
+    if [args.own, args.competitors, args.analytics, args.transcripts].count(True) != 1:
         print(
-            "ytscout collect: choose one source: --own, --competitors or --analytics",
+            "ytscout collect: choose one source: --own, --competitors, --analytics or "
+            "--transcripts",
             file=sys.stderr,
         )
         return EXIT_ERROR
+    if args.transcripts:
+        # youtube-transcript-api does not use the Data API quota: no --max-units needed.
+        return _collect_transcripts(args)
     if args.analytics:
         # Analytics quota is separate from the Data API ledger: no --max-units needed.
         return _collect_analytics(args)
@@ -586,6 +603,55 @@ def _collect_analytics(args: argparse.Namespace) -> int:
                 print(f"collect: the Analytics API rejected a query: {exc}", file=sys.stderr)
                 return EXIT_ERROR
         _print_analytics_summary(counts, start, end)
+        return EXIT_OK
+    finally:
+        conn.close()
+
+
+def _collect_transcripts(args: argparse.Namespace) -> int:
+    """``collect --transcripts``: fetch missing transcripts; a dry run lists the video ids."""
+    root = find_repo_root()
+    settings: Settings | None
+    try:
+        settings = load(repo_root=root)
+    except SettingsMissing as exc:
+        if not args.dry_run:
+            print(f"collect: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"note: {exc.path} not found; using the default data directory")
+        settings = None
+    except SettingsError as exc:
+        print(f"collect: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+
+    if args.dry_run:
+        ids: list[str] = []
+        with _read_only(db_path) as real:
+            if real is not None:
+                try:
+                    ids = repo.transcript_candidates(real, args.limit)
+                except sqlite3.Error as exc:
+                    print(f"note: could not read candidates: {exc}", file=sys.stderr)
+        print("dry run: transcripts that would be fetched (nothing is sent, nothing is written)")
+        for video_id in ids:
+            print(f"  {video_id}")
+        print(f"candidates: {len(ids)}" if ids else "candidates: none")
+        return EXIT_OK
+
+    assert settings is not None
+    conn = connect(db_path)
+    try:
+        with recorded_run(conn, "collect_transcripts"):
+            counts = collect_transcripts(
+                conn, limit=args.limit, pause_seconds=settings.transcripts.pause_seconds
+            )
+        print(
+            f"collect --transcripts: ok {counts.ok}, unavailable {counts.unavailable}, "
+            f"error {counts.error}"
+        )
+        for video_id, status, detail in counts.failures:
+            print(f"  {video_id}: {status} ({detail})", file=sys.stderr)
         return EXIT_OK
     finally:
         conn.close()

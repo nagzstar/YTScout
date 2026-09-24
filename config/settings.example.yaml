@@ -27,6 +27,10 @@ videos_per_month:
 quota:
   daily_cap: 9000
 
+# collect --transcripts (youtube-transcript-api): seconds to wait between videos.
+transcripts:
+  pause_seconds: 1.5
+
 # Claude Code model for `claude -p` calls. null = Claude Code's default.
 claude:
   model: null

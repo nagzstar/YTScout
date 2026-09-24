@@ -34,6 +34,7 @@ DEFAULT_LONGFORM_PER_MONTH = 4
 DEFAULT_QUOTA_DAILY_CAP = 9000
 DEFAULT_CLIENT_SECRET_PATH = "scripts/.secrets/client_secret.json"
 DEFAULT_TOKEN_PATH = "scripts/.secrets/token.json"
+DEFAULT_TRANSCRIPT_PAUSE_SECONDS = 1.5
 
 
 class SettingsError(Exception):
@@ -63,6 +64,11 @@ class Quota:
 
 
 @dataclass(frozen=True)
+class TranscriptSettings:
+    pause_seconds: float = DEFAULT_TRANSCRIPT_PAUSE_SECONDS
+
+
+@dataclass(frozen=True)
 class ClaudeSettings:
     model: str | None = None  # None = Claude Code's default model
 
@@ -82,6 +88,7 @@ class Settings:
     claude: ClaudeSettings
     client_secret_path: Path
     token_path: Path
+    transcripts: TranscriptSettings = TranscriptSettings()
     api_key: str | None = field(default=None, repr=False)
 
     @property
@@ -159,6 +166,7 @@ def load(path: Path | str | None = None, *, repo_root: Path | str | None = None)
     videos = _section(doc, "videos_per_month")
     quota = _section(doc, "quota")
     claude = _section(doc, "claude")
+    transcripts = _section(doc, "transcripts")
 
     try:
         usd_gbp = float(doc.get("usd_gbp", DEFAULT_USD_GBP))
@@ -167,6 +175,9 @@ def load(path: Path | str | None = None, *, repo_root: Path | str | None = None)
             longform=int(videos.get("longform", DEFAULT_LONGFORM_PER_MONTH)),
         )
         quota_settings = Quota(daily_cap=int(quota.get("daily_cap", DEFAULT_QUOTA_DAILY_CAP)))
+        transcript_settings = TranscriptSettings(
+            pause_seconds=float(transcripts.get("pause_seconds", DEFAULT_TRANSCRIPT_PAUSE_SECONDS))
+        )
     except (TypeError, ValueError) as exc:
         raise SettingsError(f"malformed numeric value in {settings_path}: {exc}") from exc
 
@@ -189,5 +200,6 @@ def load(path: Path | str | None = None, *, repo_root: Path | str | None = None)
             root, env.get("YT_CLIENT_SECRET_PATH", DEFAULT_CLIENT_SECRET_PATH)
         ),
         token_path=_resolve(root, env.get("YT_TOKEN_PATH", DEFAULT_TOKEN_PATH)),
+        transcripts=transcript_settings,
         api_key=env.get("YT_API_KEY"),
     )

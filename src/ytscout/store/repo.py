@@ -386,6 +386,62 @@ def upsert_own_traffic(
     )
 
 
+# --- transcripts --------------------------------------------------------------------------
+
+TRANSCRIPT_STATUSES = ("ok", "unavailable", "error")
+
+
+def transcript_candidates(conn: sqlite3.Connection, limit: int) -> list[str]:
+    """Video ids of the own and ``approved``/``watch`` channels with no final transcript row
+    (``ok`` or ``unavailable``), newest first."""
+    rows = conn.execute(
+        """
+        SELECT v.id FROM videos v JOIN channels c ON c.id = v.channel_id
+        WHERE (c.role = 'own' OR c.status IN ('approved', 'watch'))
+          AND NOT EXISTS (SELECT 1 FROM transcripts t
+                          WHERE t.video_id = v.id AND t.status IN ('ok', 'unavailable'))
+        ORDER BY v.published_at DESC, v.id
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
+def put_transcript(
+    conn: sqlite3.Connection,
+    video_id: str,
+    *,
+    language: str,
+    text: str | None,
+    source: str | None,
+    status: str,
+) -> None:
+    """Record one fetch attempt. A final result (``ok``/``unavailable``) clears the video's
+    earlier ``error`` rows; an ``ok`` row is never overwritten by a later attempt."""
+    if status not in TRANSCRIPT_STATUSES:
+        raise ValueError(f"status must be one of {TRANSCRIPT_STATUSES}, got {status!r}")
+    if status != "error":
+        conn.execute("DELETE FROM transcripts WHERE video_id = ? AND status = 'error'", (video_id,))
+    conn.execute(
+        """
+        INSERT INTO transcripts (video_id, language, text, source, status, fetched_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (video_id, language) DO UPDATE SET
+            text = excluded.text, source = excluded.source,
+            status = excluded.status, fetched_at = excluded.fetched_at
+        WHERE transcripts.status != 'ok'
+        """,
+        (video_id, language, text, source, status, now_utc()),
+    )
+
+
+def get_transcripts(conn: sqlite3.Connection, video_id: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM transcripts WHERE video_id = ? ORDER BY language", (video_id,)
+    ).fetchall()
+
+
 # --- runs ---------------------------------------------------------------------------------
 
 
