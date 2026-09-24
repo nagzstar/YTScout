@@ -20,6 +20,12 @@ from pathlib import Path
 from ytscout import __version__, dashboard
 from ytscout.audit import COVERAGE_RELPATH, STEPS_RELPATH, AuditError, format_table, run_audit
 from ytscout.collect import ChannelNotFound, Counts, collect_own
+from ytscout.collect.analytics import (
+    DEFAULT_DAYS,
+    AnalyticsCounts,
+    collect_analytics,
+    window,
+)
 from ytscout.collect.competitors import RECENT_DAYS, CompetitorResult, collect_competitors
 from ytscout.collect.discover import (
     DEFAULT_MAX_SEARCHES,
@@ -59,7 +65,21 @@ from ytscout.youtube import (
     Ledger,
     Transport,
 )
+from ytscout.youtube.analytics import (
+    AnalyticsApi,
+    AnalyticsTransport,
+    DryRunAnalyticsTransport,
+    GoogleAnalyticsTransport,
+    QueryRejected,
+)
 from ytscout.youtube.client import PAGE_SIZE
+from ytscout.youtube.oauth import (
+    TokenError,
+    check_scopes,
+    describe,
+    load_credentials,
+    run_consent_flow,
+)
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -70,7 +90,6 @@ EXIT_CLAUDE_UNAVAILABLE = 5
 
 # command -> (help text, issue that delivers it). Order is the order shown in --help.
 STUBS: dict[str, tuple[str, str]] = {
-    "auth": ("OAuth consent for the Analytics API", "011"),
     "packet": ("write one analysis packet for Claude", "016"),
     "analyse": ("run Claude analyses over packets", "017"),
     "scout": ("the niche pipeline: propose / validate / tag / snowball / sensitivity", "021"),
@@ -78,6 +97,7 @@ STUBS: dict[str, tuple[str, str]] = {
 
 COMMANDS: tuple[str, ...] = (
     "doctor",
+    "auth",
     "collect",
     "discover",
     "dashboard",
@@ -104,6 +124,16 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check settings and secrets are present (no values)")
     doctor.set_defaults(func=cmd_doctor)
 
+    auth = sub.add_parser(
+        "auth", help="OAuth consent for the Analytics API (opens a browser; Active step)"
+    )
+    auth.add_argument(
+        "--status",
+        action="store_true",
+        help="report the saved token: present, refreshable, scope verdict (no values)",
+    )
+    auth.set_defaults(func=cmd_auth)
+
     collect = sub.add_parser(
         "collect", help="pull own/competitor/analytics/transcript/niche data into SQLite"
     )
@@ -114,6 +144,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--competitors",
         action="store_true",
         help="weekly refresh of the own channel and every approved/watch competitor",
+    )
+    collect.add_argument(
+        "--analytics",
+        action="store_true",
+        help="own-channel YouTube Analytics (OAuth): per-video totals, per-day, traffic sources",
+    )
+    collect.add_argument(
+        "--days",
+        type=_positive_int,
+        default=DEFAULT_DAYS,
+        help=f"--analytics: window length in days, ending yesterday (default {DEFAULT_DAYS})",
     )
     collect.add_argument(
         "--videos",
@@ -322,9 +363,15 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
 
     Exit 3 when a quota cap stops the run; everything collected before it is committed.
     """
-    if args.own == args.competitors:
-        print("ytscout collect: choose one source: --own or --competitors", file=sys.stderr)
+    if [args.own, args.competitors, args.analytics].count(True) != 1:
+        print(
+            "ytscout collect: choose one source: --own, --competitors or --analytics",
+            file=sys.stderr,
+        )
         return EXIT_ERROR
+    if args.analytics:
+        # Analytics quota is separate from the Data API ledger: no --max-units needed.
+        return _collect_analytics(args)
     if not _require_quota_flag(args, "collect"):
         return EXIT_ERROR
 
@@ -406,6 +453,192 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
         return EXIT_OK
     finally:
         conn.close()
+
+
+def make_analytics_transport(credentials: object, dry_run: bool) -> AnalyticsTransport:
+    """The Analytics transport. Tests replace this with a ``FakeAnalyticsTransport``."""
+    if dry_run:
+        return DryRunAnalyticsTransport()
+    return GoogleAnalyticsTransport(credentials)
+
+
+def _auth_hint(settings: Settings) -> str:
+    return (
+        "run `ytscout auth` (an Active step: it opens Google's consent screen) to save a "
+        f"read-only Analytics token at {_relative_to_root(settings)(settings.token_path)}"
+    )
+
+
+def _own_video_ids(conn: sqlite3.Connection | None, channel_id: str) -> list[str]:
+    if conn is None:
+        return []
+    try:
+        return [row["id"] for row in repo.videos_for_channel(conn, channel_id)]
+    except sqlite3.Error as exc:
+        print(f"note: could not read own videos: {exc}", file=sys.stderr)
+        return []
+
+
+def _print_analytics_plan(transport: DryRunAnalyticsTransport, n_videos: int) -> None:
+    print(
+        "dry run: planned YouTube Analytics API queries (nothing is sent, nothing is "
+        "written; Analytics quota is separate from the Data API ledger)"
+    )
+    for params in transport.calls:
+        shown = dict(params)
+        filters = str(shown.get("filters", ""))
+        if n_videos and filters.startswith("video=="):
+            shown["filters"] = f"video==<{filters.count(',') + 1} id(s)>"
+        print("  reports.query " + " ".join(f"{k}={v}" for k, v in shown.items()))
+    print(f"planned: {len(transport.calls)} queries for {n_videos} own video(s) in the DB")
+    print(
+        "if the API rejects impressions,impressionsClickThroughRate, the first video batch "
+        "is retried once without them and later batches do not ask"
+    )
+
+
+def _print_analytics_summary(counts: AnalyticsCounts, start: str, end: str) -> None:
+    impressions = {None: "not asked", True: "available", False: "rejected by the API (null)"}
+    print(
+        f"collect --analytics {start}..{end}: videos {counts.videos}, days {counts.days}, "
+        f"traffic sources {counts.traffic_sources}, queries {counts.queries}; "
+        f"impressions/CTR {impressions[counts.impressions_available]}"
+    )
+
+
+def _collect_analytics(args: argparse.Namespace) -> int:
+    """``collect --analytics``: exit 4 without a fit token; a dry run needs none."""
+    root = find_repo_root()
+    settings: Settings | None
+    try:
+        settings = load(repo_root=root)
+    except SettingsMissing as exc:
+        if not args.dry_run:
+            print(f"collect: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"note: {exc.path} not found; planning with a placeholder channel id")
+        settings = None
+    except SettingsError as exc:
+        print(f"collect: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    channel_id = settings.own_channel_id if settings else DRY_RUN_CHANNEL_ID
+    db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+    start, end = window(args.days, utc_now().date())
+
+    if args.dry_run:
+        with _read_only(db_path) as real:
+            ids = _own_video_ids(real, channel_id)
+        transport = make_analytics_transport(None, True)
+        conn = connect(Path(":memory:"))
+        try:
+            collect_analytics(
+                AnalyticsApi(transport),
+                conn,
+                ids or ["<own video ids from collect --own>"],
+                start=start,
+                end=end,
+            )
+        finally:
+            conn.close()
+        if isinstance(transport, DryRunAnalyticsTransport):
+            _print_analytics_plan(transport, len(ids))
+        return EXIT_OK
+
+    assert settings is not None
+    try:
+        credentials = load_credentials(settings.token_path)
+    except TokenError as exc:
+        print(f"collect: {exc}; {_auth_hint(settings)}", file=sys.stderr)
+        return EXIT_NO_OAUTH_TOKEN
+    if credentials is None:
+        print(f"collect: no OAuth token; {_auth_hint(settings)}", file=sys.stderr)
+        return EXIT_NO_OAUTH_TOKEN
+    problems = check_scopes(credentials)
+    if problems:
+        print(
+            f"collect: the OAuth token is not fit for use ({'; '.join(problems)}); "
+            f"{_auth_hint(settings)}",
+            file=sys.stderr,
+        )
+        return EXIT_NO_OAUTH_TOKEN
+
+    conn = connect(db_path)
+    try:
+        ids = _own_video_ids(conn, channel_id)
+        if not ids:
+            print(
+                "note: no own videos in the DB yet (run collect --own first); "
+                "collecting channel-level rows only",
+                file=sys.stderr,
+            )
+        api = AnalyticsApi(make_analytics_transport(credentials, False))
+        with recorded_run(conn, "collect_analytics") as run:
+            try:
+                counts = collect_analytics(api, conn, ids, start=start, end=end)
+            except QueryRejected as exc:
+                run.status = "error"
+                print(f"collect: the Analytics API rejected a query: {exc}", file=sys.stderr)
+                return EXIT_ERROR
+        _print_analytics_summary(counts, start, end)
+        return EXIT_OK
+    finally:
+        conn.close()
+
+
+def cmd_auth(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``auth``: the consent flow. ``auth --status``: report on the saved token, no values."""
+    try:
+        settings = load()
+    except SettingsError as exc:
+        print(f"auth: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    rel = _relative_to_root(settings)
+    if args.status:
+        status = describe(settings.token_path)
+        print(f"token: {'present' if status.present else 'absent'} ({rel(settings.token_path)})")
+        if not status.present:
+            print("run `ytscout auth` to create one")
+            return EXIT_OK
+        if status.error:
+            print(f"loads: no - {status.error}")
+            print("run `ytscout auth` to replace it")
+            return EXIT_OK
+        print(f"expired: {_yes_no(status.expired)}")
+        print(f"refresh token: {_yes_no(status.has_refresh_token)}")
+        if status.refreshed is True:
+            print("refresh: ok (refreshed and saved)")
+        elif status.refreshed is False:
+            print(f"refresh: failed - {status.refresh_error}")
+        elif status.expired:
+            print("refresh: impossible without a refresh token")
+        else:
+            print("refresh: not needed yet")
+        print("scopes: " + (", ".join(status.scopes) or "(none recorded)"))
+        if status.problems:
+            print("scope verdict: NOT FIT for collect --analytics")
+            for problem in status.problems:
+                print(f"  - {problem}")
+            print("run `ytscout auth` to replace the token")
+        else:
+            print("scope verdict: ok")
+        return EXIT_OK
+
+    if not settings.client_secret_path.is_file():
+        print(
+            f"auth: no OAuth client secret at {rel(settings.client_secret_path)} "
+            "(set YT_CLIENT_SECRET_PATH in .env)",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    credentials = run_consent_flow(settings.client_secret_path, settings.token_path)
+    print(f"token saved to {rel(settings.token_path)}")
+    problems = check_scopes(credentials)
+    if problems:
+        print("scope verdict: NOT FIT - " + "; ".join(problems), file=sys.stderr)
+        return EXIT_ERROR
+    print("scope verdict: ok")
+    return EXIT_OK
 
 
 def _tracked(conn: sqlite3.Connection | None) -> list[dict]:

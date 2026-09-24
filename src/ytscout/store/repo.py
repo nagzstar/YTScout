@@ -321,6 +321,71 @@ def put_api_cache(conn: sqlite3.Connection, key: str, etag: str | None, body: di
     )
 
 
+# --- own analytics (011) -------------------------------------------------------------------
+
+_OWN_ANALYTICS_COLUMNS = (
+    "views",
+    "est_revenue_usd",
+    "rpm_usd",
+    "monetized_playbacks",
+    "avg_view_duration_s",
+    "avg_view_pct",
+    "impressions",
+    "ctr",
+    "sub_delta",
+    "minutes_watched",
+    "likes",
+)
+
+
+def upsert_own_analytics(
+    conn: sqlite3.Connection, video_id: str, window_start: str, window_end: str, **values: object
+) -> None:
+    """One video's totals over a window. Columns not given are stored as NULL."""
+    unknown = set(values) - set(_OWN_ANALYTICS_COLUMNS)
+    if unknown:
+        raise ValueError(f"unknown own_analytics columns: {sorted(unknown)}")
+    columns = ("video_id", "window_start", "window_end", *_OWN_ANALYTICS_COLUMNS, "collected_at")
+    row = (
+        video_id,
+        window_start,
+        window_end,
+        *(values.get(c) for c in _OWN_ANALYTICS_COLUMNS),
+        now_utc(),
+    )
+    conn.execute(
+        f"INSERT OR REPLACE INTO own_analytics ({', '.join(columns)})"
+        f" VALUES ({', '.join('?' * len(columns))})",
+        row,
+    )
+
+
+def upsert_own_daily(
+    conn: sqlite3.Connection,
+    day: str,
+    views: int | None,
+    revenue_usd: float | None,
+    monetized_playbacks: int | None,
+) -> None:
+    """One channel-level day; a re-run replaces it (recent days get revised)."""
+    conn.execute(
+        "INSERT OR REPLACE INTO own_daily"
+        " (day, views, revenue_usd, monetized_playbacks, collected_at) VALUES (?, ?, ?, ?, ?)",
+        (day, views, revenue_usd, monetized_playbacks, now_utc()),
+    )
+
+
+def upsert_own_traffic(
+    conn: sqlite3.Connection, window_start: str, window_end: str, source: str, views: int | None
+) -> None:
+    """Channel-level views from one traffic source over a window."""
+    conn.execute(
+        "INSERT OR REPLACE INTO own_traffic"
+        " (window_start, window_end, source, views, collected_at) VALUES (?, ?, ?, ?, ?)",
+        (window_start, window_end, source, views, now_utc()),
+    )
+
+
 # --- runs ---------------------------------------------------------------------------------
 
 

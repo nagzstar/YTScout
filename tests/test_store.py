@@ -21,6 +21,8 @@ EXPECTED_TABLES = {
     "video_snapshots",
     "transcripts",
     "own_analytics",
+    "own_daily",
+    "own_traffic",
     "niches",
     "niche_channels",
     "niche_scores",
@@ -118,7 +120,7 @@ def test_connect_twice_applies_nothing_new(tmp_path: Path) -> None:
     connect(path).close()
     c = connect(path)
     rows = c.execute("SELECT version, applied_at FROM schema_migrations").fetchall()
-    assert [r["version"] for r in rows] == [1, 2]
+    assert [r["version"] for r in rows] == [1, 2, 3]
     assert ISO_UTC.match(rows[0]["applied_at"])
     assert migrate(c) == []
     c.close()
