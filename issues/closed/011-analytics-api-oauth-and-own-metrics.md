@@ -79,3 +79,65 @@ estimate the niche scout makes.
 
 `DESIGN.md §4.5, §8.2`. Revenue and RPM stay in SQLite on this machine. Nothing in this
 issue prints a money figure; the dashboard shows RPM only as a calibration badge later.
+
+## Outcome (closed 2026-09-24)
+
+Delivered: `youtube/oauth.py`, `youtube/analytics.py`, `collect/analytics.py`, migration
+`0003_own_analytics.sql`, a real `ytscout auth [--status]` in place of the stub, and
+`collect --analytics [--days 400] [--dry-run]`. `tests/test_analytics.py` has 21 tests;
+206 pass in total.
+
+- **The OAuth API.** `load_credentials(token_path, *, refresh=True)` returns `None` when
+  the file is absent. An expired token with a refresh token is refreshed and written
+  back. If the file won't parse or the refresh fails, it raises `TokenError`, and that
+  covers network failures too. The error message never contains token contents.
+  `refresh_token()` is split out so that `describe()` can report scopes even when a
+  refresh fails. `check_scopes` reads `granted_scopes` or, failing that, `scopes`. It
+  flags a missing `yt-analytics-monetary.readonly` scope and any scope that does not end
+  in `.readonly`.
+- **`auth --status` always exits 0.** It prints `token: absent|present`, expired,
+  whether there is a refresh token, the refresh result, the scope names and the verdict.
+  Run against the copied pipeline token it printed: missing monetary scope; not
+  read-only: `youtube`, `youtube.force-ssl`, `youtube.upload`. **Issue 012 has to replace
+  this token with `ytscout auth`.**
+- **Not verified: the token refresh.** In this session the refresh failed with
+  `SSL CERTIFICATE_VERIFY_FAILED` against `oauth2.googleapis.com`. That looks like the
+  sandbox's network. `--status` reports it as `refresh: failed - ... TransportError`.
+  Check it on the real machine in 012.
+- **Deviation: `AnalyticsApi(transport)`, not `(credentials, transport)`.** This mirrors
+  `DataApi`/`GoogleTransport`: the credentials go to `GoogleAnalyticsTransport(credentials)`.
+  `query(**params)` defaults to `ids=channel==MINE` and returns the rows as dicts keyed
+  by column header. Tests can swap in `FakeAnalyticsTransport(handler)`, and
+  `DryRunAnalyticsTransport` backs the dry run. The CLI seams are
+  `cli.make_analytics_transport(credentials, dry_run)` and `cli.load_credentials`.
+- **`collect --analytics` does not need `--max-units`.** Analytics quota is not part of
+  the Data API ledger. The window is `--days` long and ends yesterday, inclusive.
+  - Video ids come from the own channel's `videos` rows, so `collect --own` has to run
+    first. With no videos, only the channel-level rows are collected, and a note says so.
+  - Queries go in batches of 200 with `sort=-views` and `maxResults=200`, which the docs
+    require for video-dimension reports.
+  - Exit 4, naming `ytscout auth`, when the token is absent, won't load or refresh, or
+    has scope problems.
+  - A `runs` row is written with kind `collect_analytics`.
+  - The summary prints counts only. No money figure is printed.
+- **Impressions and CTR.** The Analytics API metrics docs
+  (developers.google.com/youtube/analytics/metrics, read 2026-09-24) do not list
+  `impressions` or `impressionsClickThroughRate` as metrics. `adImpressions` is noted
+  there as "formerly named impressions". So the first video batch asks for both, and a
+  `QueryRejected` (HTTP 400) retries that batch without them. Later batches don't ask,
+  and the columns are stored as NULL. **Risk for 012:** if the API accepts `impressions`
+  as the old alias for ad impressions, the `impressions` column would hold ad
+  impressions. Check what the real response contains, and drop the metric if that
+  happens.
+- **Schema.** `own_analytics` gains `minutes_watched`, `likes` and `collected_at`.
+  `traffic_json` stays NULL, because per-video traffic would cost a query per video.
+  Two new tables: `own_daily(day PK, views, revenue_usd, monetized_playbacks,
+  collected_at)` and `own_traffic(window_start, window_end, source, views,
+  collected_at)`. All three tables are upserted on their key: YouTube revises recent
+  revenue, and history is kept by window/day. They are not append-only snapshot tables.
+  `monetized_playbacks` in `own_analytics` stays NULL, since the per-video metric list in
+  the Scope does not include it.
+- **The grep criterion.** `grep -rn estimatedRevenue src/` matches only
+  `youtube/analytics.py` and `collect/analytics.py`, plus their gitignored `.pyc` files.
+- **Not exercised: the consent flow (`ytscout auth` without `--status`).** It is blocked
+  in sessions and is the job of 012.
