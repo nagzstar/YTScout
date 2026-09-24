@@ -73,3 +73,56 @@ without the network, every later issue needs real quota to test. Both get fixed 
 
 `DESIGN.md §8.1` for costs and rules. Quota resets at midnight Pacific, which is 08:00 in
 the UK; the ledger is per Pacific day, never per UK day.
+
+## Outcome (closed 2026-09-24)
+
+Delivered: `src/ytscout/youtube/{__init__,quota,transport,client}.py`, `tests/test_quota.py`
+(11 tests), `tests/test_client.py` (31 tests; the suite is now 116 passing), and four
+hand-written fixtures in `tests/fixtures/data_api/`: a channel, two playlist pages (5 + 2
+items, so pagination has something to follow) and a videos batch of 5. Every acceptance
+criterion was checked by running it. The pytest names are `test_search_charges_100`,
+`test_videos_with_50_ids_charges_1`, `test_the_9001st_unit_raises_daily_and_the_row_stays_at_9000`,
+`test_run_cap_300_stops_the_run_while_the_day_is_well_under` and
+`test_google_quota_exceeded_surfaces_as_quota_exhausted_google`. `grep -rn --include=*.py
+googleapiclient src/` finds it only in `youtube/transport.py`. `ruff check` and
+`ruff format --check` are clean, and `ytscout --help` runs. No subcommand uses the client
+yet, so there was no `--dry-run` to run; `collect --dry-run` still exits 2. No real API
+calls were made.
+
+Decisions, and why:
+
+- **`tzdata` was added as a win32-only dependency.** Windows has no system IANA database,
+  so `ZoneInfo("America/Los_Angeles")` fails there without it. Run
+  `pip install -e ".[dev]"` again if an older venv is missing it.
+- **The cost table (`UNIT_COSTS`) lives in `quota.py`, not `client.py`.** That way
+  `DryRunTransport` can report units without a circular import. It is still one table, and
+  the client reads every cost from it.
+- **Keyword-only `etag` on `Transport.call`.** Beyond the issue's `call(resource, method, **params)`,
+  `call` takes a keyword-only `etag`, which it sends as `If-None-Match`. A 304 raises
+  `NotModified`, and `DataApi` then returns the cached body from `api_cache`. The charge
+  still applies, and the `DataApi` docstring says so.
+- **`Ledger(..., dry_run=True)`** checks both caps against the stored day total plus this
+  run's would-be units, and writes nothing. `DataApi` skips the cache under a dry-run
+  ledger, so empty dry-run bodies never poison it. **The CLI should pair `DryRunTransport`
+  with a dry-run ledger.**
+- **`charge()` commits its own write**, using `with conn:`. That means it also commits
+  anything else pending on the same connection. A collector that needs atomic batches
+  should checkpoint before calling the API, or use a separate connection for the ledger.
+- The Google reasons `quotaExceeded` and `dailyLimitExceeded` both map to
+  `QuotaExhausted(kind="google")`, with `used` and `cap` set to `None`. Other `HttpError`s,
+  including `rateLimitExceeded`, pass through unchanged.
+- SQL for `quota_ledger` and `api_cache` went into `store/repo.py`: `quota_used`,
+  `add_quota_used`, `get_api_cache` and `put_api_cache`. That keeps to "only the store
+  writes". `store/db.py` gained `utc_now()` (an aware datetime), which is still the only
+  clock read. `Ledger` takes an optional `clock`; without one it reads `quota.utc_now` on
+  each call, so tests can monkeypatch it.
+- `search` always sends `part=snippet` and `type=video`. `channels` and `videos` send
+  `maxResults=50` and refuse more than 50 ids, or none, before charging.
+  `iter_playlist_items(playlist_id, max_pages=None)` follows `nextPageToken`.
+- `FakeTransport`: a fixture can be a list of pages, keyed without `pageToken`. Each page
+  uses its own `nextPageToken` if it has one; otherwise the fake invents `page1`,
+  `page2`, …. Use `FakeTransport.key(resource, method, **params)` to build keys, because
+  the params must match exactly what `DataApi` sends.
+
+For 004: build the real ledger with `Ledger(conn, settings.quota.daily_cap, run_cap=args.max_units)`
+and `GoogleTransport(settings.api_key)`, and map `QuotaExhausted` of any kind to exit 3.
