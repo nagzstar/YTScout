@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "TodoWrite",
+      "Skill",
+      "Agent",
+      "WebSearch",
+      "WebFetch",
+      "Bash(ls:*)",
+      "Bash(dir:*)",
+      "Bash(cat:*)",
+      "Bash(type:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(touch:*)",
+      "Bash(sed:*)",
+      "Bash(diff:*)",
+      "Bash(pwd)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(py:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(./.venv/Scripts/python.exe:*)",
+      "Bash(.venv\\Scripts\\python.exe:*)",
+      "Bash(pip:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(ytscout:*)",
+      "Bash(claude:*)",
+      "Bash(powershell:*)",
+      "Bash(pwsh:*)",
+      "Bash(sqlite3:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git mv:*)",
+      "Bash(git rm:*)",
+      "Bash(git commit:*)",
+      "Bash(git restore:*)",
+      "Bash(git stash:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git fetch:*)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git rebase:*)",
+      "Bash(git checkout:*)",
+      "Bash(rm -rf:*)",
+      "Bash(gh:*)",
+      "Bash(gcloud:*)",
+      "Bash(schtasks:*)",
+      "Bash(Register-ScheduledTask:*)",
+      "Edit(config/settings.yaml)",
+      "Write(config/settings.yaml)",
+      "Read(.env)",
+      "Read(**/youtube_api.key)",
+      "Read(**/client_secret*.json)",
+      "Read(**/oauth_token.json)",
+      "Read(~/AppData/Roaming/ytscout/**)",
+      "Edit(**/*.sqlite)",
+      "Write(**/*.sqlite)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/lazyboy/guard.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/lazyboy/guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

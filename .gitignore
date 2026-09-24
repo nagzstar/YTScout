@@ -1,0 +1,45 @@
+# Secrets and runtime state — never commit
+config/settings.yaml
+data/
+logs/
+dashboard/index.html
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+oauth_token.json
+client_secret*.json
+youtube_api.key
+*.key
+.env
+
+# Lazyboy run records — a record of a run on this machine, not part of the project
+lazyboy/logs/*
+!lazyboy/logs/.gitkeep
+lazyboy/metrics.csv
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code local state
+.claude/settings.local.json
+.secrets/
+token.json
