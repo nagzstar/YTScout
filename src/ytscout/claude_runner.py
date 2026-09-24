@@ -135,8 +135,13 @@ def check_available() -> str | None:
 
 
 def file_hash(path: Path) -> str:
-    """First 12 hex characters of the SHA-256 of the file's bytes."""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:HASH_HEX_CHARS]
+    """First 12 hex characters of the SHA-256 of the file's bytes, CRLF read as LF.
+
+    Git on Windows may check the same prompt out with either line ending; the hash keys
+    stored analyses, so it must not change with that.
+    """
+    data = Path(path).read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()[:HASH_HEX_CHARS]
 
 
 def child_env() -> dict[str, str]:

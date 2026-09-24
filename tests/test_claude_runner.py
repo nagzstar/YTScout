@@ -232,6 +232,9 @@ def test_hashes_are_stable_sha256_prefixes(fake_claude, packet: Path, tmp_path: 
     expected_schema = hashlib.sha256(SCHEMA.read_bytes()).hexdigest()[:12]
     assert file_hash(PROMPT) == expected_prompt
     assert len(expected_prompt) == 12
+    crlf = tmp_path / "crlf.md"
+    crlf.write_bytes(PROMPT.read_bytes().replace(b"\n", b"\r\n"))
+    assert file_hash(crlf) == expected_prompt
     first = run(PROMPT, packet, SCHEMA)
     second = run(PROMPT, packet, SCHEMA)
     assert first.prompt_hash == second.prompt_hash == expected_prompt

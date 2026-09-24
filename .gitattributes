@@ -1,2 +1,5 @@
 # The POSIX fake-claude shim must keep LF endings or /bin/sh rejects the shebang line.
 tests/fake_claude/claude text eol=lf
+# Prompts and schemas are hashed into stored analyses: keep their bytes identical on every checkout.
+prompts/** text eol=lf
+schemas/** text eol=lf
