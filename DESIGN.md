@@ -388,7 +388,7 @@ Core tables; columns abbreviated. All timestamps UTC.
 - **videos** — `id, channel_id, title, description, tags_json, published_at, duration_s, is_short, category_id`
 - **video_snapshots** — `video_id, captured_at, views, likes, comments`
 - **transcripts** — `video_id, language, text, source, status, fetched_at`
-- **own_analytics** — `video_id, day, views, est_revenue_usd, rpm_usd, monetized_playbacks, avg_view_duration_s, avg_view_pct, impressions, ctr, sub_delta, traffic_json`
+- **own_analytics** — `video_id, window_start, window_end, views, est_revenue_usd, rpm_usd, monetized_playbacks, avg_view_duration_s, avg_view_pct, impressions, ctr, sub_delta, traffic_json`
 - **niches** — `id, format, topic, topic_category, label, status, source ('llm'|'snowball'|'seed'), created_at, queries_json, required_steps_json`
 - **niche_channels** — `niche_id, channel_id, is_small, added_at`
 - **niche_scores** — `niche_id, scored_at, opportunity, small_outlier_rate, newcomer_view_share, concentration, newcomer_monthly_views_p25/p50/p75, rpm_gbp, est_monthly_gbp, manual_hours_per_month, score, confidence_flags_json`
@@ -396,8 +396,13 @@ Core tables; columns abbreviated. All timestamps UTC.
 - **video_summaries** — `video_id, prompt_hash, summary_json, created_at`
 - **quota_ledger** — `day_pacific, units_used`
 - **runs** — `id, started_at, finished_at, kind, status, log_path`
+- **channel_metrics** — `id, channel_id, computed_at, window, format, metrics_json` (appended per refresh; latest wins)
+- **api_cache** — `key, etag, body_json, fetched_at` (ETag cache for the Data API)
+- **collector_state** — `kind, key, done_at` (resume checkpoints across quota days)
+- **decisions** — `id, kind, target_id, decision, decided_at` (approve/reject/watch clicks)
+- **schema_migrations** — `version, applied_at` (one row per applied `store/migrations/NNNN_*.sql`)
 
-12-month history comes from keeping snapshots, never overwriting.
+12-month history comes from keeping snapshots, never overwriting: `channel_snapshots` and `video_snapshots` have triggers that refuse UPDATE and DELETE.
 
 ---
 
