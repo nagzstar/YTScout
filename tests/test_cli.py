@@ -65,8 +65,8 @@ def test_each_stub_exits_2_with_not_implemented_line(
 
 
 def test_stub_swallows_future_flags(capsys: pytest.CaptureFixture[str]) -> None:
-    """run_weekly.ps1 will call e.g. `packet --max-units 500`; that must still be a 2."""
-    assert main(["packet", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
+    """run_weekly.ps1 will call e.g. `scout --max-units 500`; that must still be a 2."""
+    assert main(["scout", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
     assert "not implemented" in capsys.readouterr().err
 
 

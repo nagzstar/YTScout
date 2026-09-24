@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "video_summary",
+  "description": "One video summarised from its packet (prompts/video_summary.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "hook_type",
+    "structure",
+    "topic_tags",
+    "title_formula",
+    "pacing_note",
+    "claims_count",
+    "unique_angle",
+    "one_line_summary"
+  ],
+  "properties": {
+    "hook_type": {
+      "type": "string",
+      "enum": ["question", "shock_stat", "countdown_tease", "story_open", "direct_claim", "other"]
+    },
+    "structure": { "type": "string" },
+    "topic_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 5
+    },
+    "title_formula": { "type": "string" },
+    "pacing_note": { "type": "string" },
+    "claims_count": { "type": "integer", "minimum": 0 },
+    "unique_angle": { "type": "string" },
+    "one_line_summary": { "type": "string" }
+  }
+}

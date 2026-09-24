@@ -17,7 +17,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from ytscout import __version__, dashboard
+from ytscout import __version__, claude_runner, dashboard, packets
+from ytscout.analyse import DEFAULT_LIMIT as DEFAULT_SUMMARY_LIMIT
+from ytscout.analyse import summarise_videos, summary_paths
 from ytscout.audit import COVERAGE_RELPATH, STEPS_RELPATH, AuditError, format_table, run_audit
 from ytscout.collect import ChannelNotFound, Counts, collect_own
 from ytscout.collect.analytics import (
@@ -92,8 +94,6 @@ EXIT_CLAUDE_UNAVAILABLE = 5
 
 # command -> (help text, issue that delivers it). Order is the order shown in --help.
 STUBS: dict[str, tuple[str, str]] = {
-    "packet": ("write one analysis packet for Claude", "016"),
-    "analyse": ("run Claude analyses over packets", "017"),
     "scout": ("the niche pipeline: propose / validate / tag / snowball / sensitivity", "021"),
 }
 
@@ -105,6 +105,8 @@ COMMANDS: tuple[str, ...] = (
     "dashboard",
     "serve",
     "score",
+    "packet",
+    "analyse",
     *STUBS,
     "audit",
 )
@@ -225,6 +227,35 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"port on 127.0.0.1 (default {serve_mod.DEFAULT_PORT})",
     )
     serve.set_defaults(func=cmd_serve)
+
+    packet = sub.add_parser(
+        "packet", help="write one analysis packet for Claude and print its path (debugging)"
+    )
+    packet.add_argument("--video", required=True, metavar="ID", help="video id to pack")
+    packet.set_defaults(func=cmd_packet)
+
+    analyse = sub.add_parser("analyse", help="run Claude analyses over packets (claude -p)")
+    analyse.add_argument(
+        "--summaries",
+        action="store_true",
+        help="one per-video summary call for each video with a transcript attempt and no "
+        "summary under the current prompt hash",
+    )
+    analyse.add_argument(
+        "--competitors", action="store_true", help="the competitor comparison call (issue 017)"
+    )
+    analyse.add_argument(
+        "--limit",
+        type=_positive_int,
+        default=DEFAULT_SUMMARY_LIMIT,
+        help=f"--summaries: videos to summarise this run (default {DEFAULT_SUMMARY_LIMIT})",
+    )
+    analyse.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="list what would be summarised and the command shape; call nothing, write nothing",
+    )
+    analyse.set_defaults(func=cmd_analyse)
 
     for name, (help_text, issue) in STUBS.items():
         stub = sub.add_parser(name, help=f"{help_text} (issue {issue})")
@@ -1092,6 +1123,129 @@ def cmd_dashboard(args: argparse.Namespace, _extras: list[str]) -> int:
         f"videos, {len(dash.candidates)} candidates, {len(dash.approved)} approved)"
     )
     return EXIT_OK
+
+
+def _load_settings(command: str) -> Settings | None:
+    """Settings for a command that needs them; prints the problem and returns ``None``."""
+    try:
+        return load(repo_root=find_repo_root())
+    except SettingsError as exc:
+        print(f"{command}: {exc}", file=sys.stderr)
+        return None
+
+
+def cmd_packet(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``packet --video ID``: write one video packet under data/packets and print its path."""
+    settings = _load_settings("packet")
+    if settings is None:
+        return EXIT_ERROR
+    db_path = default_db_path(settings)
+    if not db_path.is_file():
+        print(f"packet: no database at {db_path}; run collect first", file=sys.stderr)
+        return EXIT_ERROR
+    conn = read_copy(db_path)  # migrated in memory; the real file is never written
+    try:
+        payload = packets.video_packet(conn, args.video)
+    except LookupError as exc:
+        print(f"packet: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    finally:
+        conn.close()
+    path = packets.write_packet("video", payload, packets.packets_dir(settings.data_dir))
+    print(path)
+    return EXIT_OK
+
+
+def _print_summary_plan(
+    conn: sqlite3.Connection, prompt_path: Path, schema_path: Path, limit: int
+) -> None:
+    prompt_hash = claude_runner.file_hash(prompt_path)
+    ids = repo.summary_candidates(conn, prompt_hash, limit)
+    print("dry run: videos that would be summarised (claude is not called, nothing is written)")
+    for video_id in ids:
+        print(f"  {video_id}")
+    print(f"candidates: {len(ids)}" if ids else "candidates: none")
+    reason = claude_runner.check_available()
+    print(f"claude: {'ok' if reason is None else reason}")
+    print(f"prompt: {prompt_path.name} ({prompt_hash}); schema: {schema_path.name}")
+    argv = claude_runner.build_command(
+        "claude", "<prompt text>", Path("<packet path>"), "<schema text>", None
+    )
+    print("command: " + " ".join(argv[:1] + [f"{argv[1]} ..."] + argv[3:]))
+
+
+def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``analyse --summaries``: per-video summaries through ``claude -p``; exit 5 if absent."""
+    if args.competitors and not args.summaries:
+        print("ytscout analyse --competitors: not implemented yet (issue 017)", file=sys.stderr)
+        return EXIT_NOT_IMPLEMENTED
+    if not args.summaries:
+        print("analyse: pass --summaries (or --competitors, issue 017)", file=sys.stderr)
+        return EXIT_ERROR
+
+    root = find_repo_root()
+    prompt_path, schema_path = summary_paths(root)
+    for path in (prompt_path, schema_path):
+        if not path.is_file():
+            print(f"analyse: missing {path}", file=sys.stderr)
+            return EXIT_ERROR
+
+    settings: Settings | None
+    try:
+        settings = load(repo_root=root)
+    except SettingsMissing as exc:
+        if not args.dry_run:
+            print(f"analyse: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"note: {exc.path} not found; using the default data directory")
+        settings = None
+    except SettingsError as exc:
+        print(f"analyse: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+
+    if args.dry_run:
+        # A migrated in-memory copy: the candidate query needs 0004's columns and a dry
+        # run must not migrate the real file.
+        copy = read_copy(db_path)
+        try:
+            _print_summary_plan(copy, prompt_path, schema_path, args.limit)
+        finally:
+            copy.close()
+        return EXIT_OK
+
+    reason = claude_runner.check_available()
+    if reason is not None:
+        print(f"analyse: claude unavailable: {reason}", file=sys.stderr)
+        return EXIT_CLAUDE_UNAVAILABLE
+
+    assert settings is not None
+    conn = connect(db_path)
+    try:
+        with recorded_run(conn, "analyse_summaries") as run:
+            counts = summarise_videos(
+                conn,
+                repo_root=root,
+                packets_dir=packets.packets_dir(settings.data_dir),
+                limit=args.limit,
+                model=settings.claude.model,
+                progress=print,
+            )
+            if counts.failure:
+                run.status = "error"
+        print(
+            f"analyse --summaries: {counts.done} of {counts.candidates} candidates summarised "
+            f"({counts.duration_s:.0f}s)"
+        )
+        if counts.failure:
+            print(
+                f"analyse: claude failed on {counts.failed_video_id}: {counts.failure}",
+                file=sys.stderr,
+            )
+            return EXIT_CLAUDE_UNAVAILABLE if counts.done == 0 else EXIT_ERROR
+        return EXIT_OK
+    finally:
+        conn.close()
 
 
 def _make_stub(name: str, issue: str):

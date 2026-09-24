@@ -500,3 +500,71 @@ def record_decision(
         "INSERT INTO decisions (kind, target_id, decision, decided_at) VALUES (?, ?, ?, ?)",
         (kind, target_id, decision, decided_at),
     )
+
+
+# --- video summaries (016) -----------------------------------------------------------------
+
+
+def summary_candidates(conn: sqlite3.Connection, prompt_hash: str, limit: int) -> list[str]:
+    """Video ids of the own and ``approved``/``watch`` channels that have had a transcript
+    attempt (any status) and no summary under ``prompt_hash``, newest first.
+
+    A summary made without a transcript (the packet carried ``unavailable``/``error``) is
+    redone once an ``ok`` transcript exists, so titles-only summaries are a stopgap.
+    """
+    rows = conn.execute(
+        """
+        SELECT v.id FROM videos v JOIN channels c ON c.id = v.channel_id
+        WHERE (c.role = 'own' OR c.status IN ('approved', 'watch'))
+          AND EXISTS (SELECT 1 FROM transcripts t WHERE t.video_id = v.id)
+          AND NOT EXISTS (
+                SELECT 1 FROM video_summaries s
+                WHERE s.video_id = v.id AND s.prompt_hash = ?
+                  AND (s.transcript_status = 'ok'
+                       OR NOT EXISTS (SELECT 1 FROM transcripts t2
+                                      WHERE t2.video_id = v.id AND t2.status = 'ok')))
+        ORDER BY v.published_at DESC, v.id
+        LIMIT ?
+        """,
+        (prompt_hash, limit),
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
+def put_video_summary(
+    conn: sqlite3.Connection,
+    video_id: str,
+    *,
+    prompt_hash: str,
+    schema_hash: str,
+    transcript_status: str,
+    summary: dict,
+) -> None:
+    """Store (or replace, for the same prompt hash) one video's summary."""
+    conn.execute(
+        """
+        INSERT INTO video_summaries
+            (video_id, prompt_hash, summary_json, created_at, schema_hash, transcript_status)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (video_id, prompt_hash) DO UPDATE SET
+            summary_json = excluded.summary_json, created_at = excluded.created_at,
+            schema_hash = excluded.schema_hash, transcript_status = excluded.transcript_status
+        """,
+        (
+            video_id,
+            prompt_hash,
+            json.dumps(summary, ensure_ascii=False, sort_keys=True),
+            now_utc(),
+            schema_hash,
+            transcript_status,
+        ),
+    )
+
+
+def get_video_summary(
+    conn: sqlite3.Connection, video_id: str, prompt_hash: str
+) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM video_summaries WHERE video_id = ? AND prompt_hash = ?",
+        (video_id, prompt_hash),
+    ).fetchone()

@@ -1,0 +1,2 @@
+# The POSIX fake-claude shim must keep LF endings or /bin/sh rejects the shebang line.
+tests/fake_claude/claude text eol=lf
