@@ -15,10 +15,12 @@ from ytscout.cli import EXIT_ERROR, EXIT_OK, main
 from ytscout.collect import discover as discover_mod
 from ytscout.collect.discover import (
     Candidate,
+    Verdict,
     discover,
     queries_within,
     screen_channel,
-    size_band,
+    screen_views,
+    subs_band,
     worst_case_units,
 )
 from ytscout.scoring import DiscoveryConfig, discovery_config, load_scoring
@@ -32,7 +34,7 @@ OWN = "UCownchannel00000000001"
 PARTS = "snippet,statistics,contentDetails"
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
 PUBLISHED_AFTER = "2025-09-24T12:00:00Z"
-CANDIDATES = ["UCgood1", "UCbig1", "UClong", "UCrejected", "UCgood2", "UCbig2"]
+CANDIDATES = ["UCgood1", "UCsmall1", "UClong", "UCrejected", "UCgood2", "UCsmall2"]
 HIT_VIDEOS = [
     "good1vid001",
     "good1vid002",
@@ -42,9 +44,9 @@ HIT_VIDEOS = [
     "good2vid002",
 ]
 CFG = DiscoveryConfig(
-    size_band_factor=10,
-    small_own_subs=1000,
-    small_band_max=10000,
+    subs_min=10000,
+    subs_max=0,
+    hit_views_min=100000,
     shorts_share_min=0.7,
     keyword_overlap_min=2,
 )
@@ -117,7 +119,6 @@ def run(conn: sqlite3.Connection, transport: FakeTransport, max_queries: int = 1
         OWN,
         titles=repo.recent_titles(conn, OWN, 50),
         rejected=repo.channel_ids_with_status(conn, "rejected"),
-        own_subs_fallback=None,
         max_queries=max_queries,
         cfg=CFG,
         shorts_max_seconds=180,
@@ -203,10 +204,25 @@ def test_query_terms_drop_the_prefix() -> None:
 # --- filter -------------------------------------------------------------------------------
 
 
-def test_size_band() -> None:
-    assert size_band(1200, CFG) == (120, 12000)
-    assert size_band(999, CFG) == (0, 10000)
-    assert size_band(None, CFG) == (0, 10000)
+def test_subs_band_is_absolute_and_uncapped_by_default() -> None:
+    assert subs_band(CFG) == (10000, float("inf"))
+    capped = DiscoveryConfig(
+        subs_min=10000,
+        subs_max=5_000_000,
+        hit_views_min=1,
+        shorts_share_min=1,
+        keyword_overlap_min=1,
+    )
+    assert subs_band(capped) == (10000, 5_000_000)
+
+
+def test_screen_views_needs_one_viral_hit() -> None:
+    v = screen_views(Verdict("UCx", kept=True, reasons=[]), [40_000, 120_000], cfg=CFG)
+    assert v.kept and v.reasons == ["top hit 120,000 views >= 100,000"]
+    v = screen_views(Verdict("UCx", kept=True, reasons=[]), [40_000, 99_999], cfg=CFG)
+    assert not v.kept and v.reasons == ["top hit 99,999 views < 100,000"]
+    v = screen_views(Verdict("UCx", kept=True, reasons=[]), [], cfg=CFG)
+    assert not v.kept and v.reasons == ["top hit 0 views < 100,000"]
 
 
 def test_discovery_config_is_read_from_scoring_yaml() -> None:
@@ -218,10 +234,10 @@ def test_keyword_overlap_below_minimum_is_a_reason() -> None:
         "UCx",
         video_ids=["v"],
         hit_titles=["Cute cats"],
-        item={"statistics": {"subscriberCount": "500"}},
+        item={"statistics": {"subscriberCount": "50000"}},
     )
     v = screen_channel(
-        c, own_channel_id=OWN, rejected=set(), band=(0, 10000), terms={"snakes"}, cfg=CFG
+        c, own_channel_id=OWN, rejected=set(), band=subs_band(CFG), terms={"snakes"}, cfg=CFG
     )
     assert not v.kept
     assert any(r.startswith("keyword overlap 0 < 2") for r in v.reasons)
@@ -234,12 +250,13 @@ def test_filter_keeps_exactly_the_two_good_channels(conn: sqlite3.Connection) ->
     assert [v.channel_id for v in result.kept] == ["UCgood1", "UCgood2"]
 
     reasons = {v.channel_id: "; ".join(v.reasons) for v in result.dropped}
-    assert set(reasons) == {OWN, "UCbig1", "UCbig2", "UClong", "UCrejected"}
+    assert set(reasons) == {OWN, "UCsmall1", "UCsmall2", "UClong", "UCrejected"}
     assert reasons[OWN] == "own channel"
     assert reasons["UCrejected"] == "rejected before"
-    assert "subs 2,000,000 outside [120, 12,000]" in reasons["UCbig1"]
-    assert "subs 50,000 outside [120, 12,000]" in reasons["UCbig2"]
+    assert "subs 2,000 < 10,000 min" in reasons["UCsmall1"]
+    assert "subs 500 < 10,000 min" in reasons["UCsmall2"]
     assert "shorts share 0% < 70% of 2 hit(s)" in reasons["UClong"]
+    assert "top hit 400,000 views >= 100,000" in reasons["UClong"]  # viral, but long-form
 
     good1 = result.verdicts["UCgood1"]
     assert (good1.hit_count, good1.keyword_overlap, good1.score) == (2, 2, 4)
@@ -259,20 +276,21 @@ def test_survivors_are_written_with_discovery_json_videos_and_snapshots(
     assert json.loads(rows[0]["discovery_json"]) == {
         "score": 4,
         "reasons": [
-            "subs 5,000 within [120, 12,000]",
+            "subs 50,000 >= 10,000",
             "keyword overlap 2: animals, dangerous",
             "shorts share 100% >= 70% of 2 hit(s)",
+            "top hit 900,000 views >= 100,000",
         ],
         "hit_count": 2,
         "matched_queries": ["top 5 dangerous animals"],
     }
     good1 = repo.get_channel(conn, "UCgood1")
     assert good1["uploads_playlist_id"] == "UUgood1"
-    assert repo.latest_channel_snapshot(conn, "UCgood1")["subs"] == 5000
+    assert repo.latest_channel_snapshot(conn, "UCgood1")["subs"] == 50000
     assert count(conn, "videos", "channel_id IN ('UCgood1', 'UCgood2')") == 4
     assert count(conn, "video_snapshots") == 4
     assert repo.get_video(conn, "good2vid002")["is_short"] == 1  # 3:00 is a Short
-    for cid in ("UCbig1", "UCbig2", "UClong"):
+    for cid in ("UCsmall1", "UCsmall2", "UClong"):
         assert repo.get_channel(conn, cid) is None
 
 

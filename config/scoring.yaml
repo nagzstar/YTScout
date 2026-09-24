@@ -7,11 +7,13 @@ shorts_max_seconds: 180
 # Competitor discovery filter (006, DESIGN.md §4.3). A search hit's channel survives only if
 # it passes all three.
 discovery:
-  # Subscribers within [own / size_band_factor, own × size_band_factor] ...
-  size_band_factor: 10
-  # ... unless the own channel has fewer than small_own_subs; then [0, small_band_max].
-  small_own_subs: 1000
-  small_band_max: 10000
+  # Absolute subscriber floor and cap (0 = no cap). Research studies channels that have
+  # already found an audience, not channels the size of our own (009: a same-size band
+  # around a small own channel returned 1-subscriber channels).
+  subs_min: 10000
+  subs_max: 0
+  # At least one search hit must have this many views: the channel has gone viral once.
+  hit_views_min: 100000
   # Fraction of the channel's search hits at or under shorts_max_seconds.
   shorts_share_min: 0.7
   # Distinct query words that appear in the channel's hit titles.

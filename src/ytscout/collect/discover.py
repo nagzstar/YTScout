@@ -2,13 +2,15 @@
 
 DESIGN.md §4.3. Own channel (1 unit) → ``search.list`` ×2 per query (100 units each) →
 ``channels.list`` for every distinct hit channel (1 unit per 50) → channel-level screen →
-``videos.list`` for the hits of channels still standing (1 unit per 50) → Shorts screen →
+``videos.list`` for the hits of channels still standing (1 unit per 50) → Shorts and
+viral-hit screens →
 survivors written as ``role='competitor'`` with ``discovery_json``. Nagz approves or
 rejects them later (007, 008); a ``rejected`` channel is never written again.
 """
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -119,11 +121,11 @@ class DiscoveryResult:
 # --- the filter (pure) --------------------------------------------------------------------
 
 
-def size_band(own_subs: int | None, cfg: DiscoveryConfig) -> tuple[float, float]:
-    """Subscriber range a competitor must sit in; a small or unknown own count → fixed band."""
-    if own_subs is None or own_subs < cfg.small_own_subs:
-        return 0, cfg.small_band_max
-    return own_subs / cfg.size_band_factor, own_subs * cfg.size_band_factor
+def subs_band(cfg: DiscoveryConfig) -> tuple[float, float]:
+    """Subscriber range a competitor must sit in: ``[subs_min, subs_max]``, ``subs_max=0``
+    meaning no cap. Absolute on purpose: research wants channels with an audience, not
+    channels the size of our own (009)."""
+    return cfg.subs_min, cfg.subs_max or math.inf
 
 
 def keyword_overlap(hit_titles: Sequence[str], terms: set[str]) -> list[str]:
@@ -165,10 +167,12 @@ def screen_channel(
     subs = c.subs
     if subs is None:
         verdict.reasons.append("subscriber count hidden")
-    elif not lo <= subs <= hi:
-        verdict.reasons.append(f"subs {subs:,} outside [{lo:,.0f}, {hi:,.0f}]")
+    elif subs < lo:
+        verdict.reasons.append(f"subs {subs:,} < {lo:,.0f} min")
+    elif subs > hi:
+        verdict.reasons.append(f"subs {subs:,} > {hi:,.0f} cap")
     else:
-        verdict.reasons.append(f"subs {subs:,} within [{lo:,.0f}, {hi:,.0f}]")
+        verdict.reasons.append(f"subs {subs:,} >= {lo:,.0f}")
     if len(words) < cfg.keyword_overlap_min:
         verdict.reasons.append(
             f"keyword overlap {len(words)} < {cfg.keyword_overlap_min} ({', '.join(words) or '-'})"
@@ -194,6 +198,17 @@ def screen_format(
         f"shorts share {share:.0%} {'>=' if ok else '<'} {cfg.shorts_share_min:.0%}"
         f" of {len(durations)} hit(s)"
     )
+    return verdict
+
+
+def screen_views(verdict: Verdict, views: Sequence[int], *, cfg: DiscoveryConfig) -> Verdict:
+    """Drop ``verdict`` unless one of the channel's hits has ``hit_views_min`` views: the
+    channel has gone viral at least once, which is what makes it worth studying (009).
+    Mutates and returns."""
+    top = max(views, default=0)
+    ok = top >= cfg.hit_views_min
+    verdict.kept = verdict.kept and ok
+    verdict.reasons.append(f"top hit {top:,} views {'>=' if ok else '<'} {cfg.hit_views_min:,}")
     return verdict
 
 
@@ -227,7 +242,6 @@ def discover(
     *,
     titles: Sequence[str],
     rejected: set[str],
-    own_subs_fallback: int | None,
     max_queries: int,
     cfg: DiscoveryConfig,
     shorts_max_seconds: int,
@@ -235,13 +249,11 @@ def discover(
     """Run discovery and write the survivors. A quota stop lands in ``result.stopped``;
     only channels fully judged before it are written."""
     result = DiscoveryResult()
-    own_subs = own_subs_fallback
     keywords: list[str] = []
     videos: dict[str, dict[str, Any]] = {}
     try:
         own = api.channels([own_channel_id], part=OWN_PARTS).get("items", [])
         if own:
-            own_subs = Candidate(own_channel_id, item=own[0]).subs or own_subs
             branding = (own[0].get("brandingSettings") or {}).get("channel") or {}
             keywords = parse_keywords(branding.get("keywords"))
         result.queries = seed_queries(titles, keywords, max_queries)
@@ -264,7 +276,7 @@ def discover(
                 if item.get("id") in result.candidates:
                     result.candidates[item["id"]].item = item
 
-        band = size_band(own_subs, cfg)
+        band = subs_band(cfg)
         terms = query_terms(result.queries)
         for c in result.candidates.values():
             result.verdicts[c.channel_id] = screen_channel(
@@ -285,14 +297,19 @@ def discover(
         return result
 
     for cid in standing:
-        durations = []
+        durations: list[int] = []
+        views: list[int] = []
         for vid in result.candidates[cid].video_ids:
-            raw = ((videos.get(vid) or {}).get("contentDetails") or {}).get("duration")
+            item = videos.get(vid) or {}
+            raw = (item.get("contentDetails") or {}).get("duration")
             if raw:
                 durations.append(parse_duration(raw))
-        screen_format(
-            result.verdicts[cid], durations, shorts_max_seconds=shorts_max_seconds, cfg=cfg
-        )
+            count = to_int((item.get("statistics") or {}).get("viewCount"))
+            if count is not None:
+                views.append(count)
+        verdict = result.verdicts[cid]
+        screen_format(verdict, durations, shorts_max_seconds=shorts_max_seconds, cfg=cfg)
+        screen_views(verdict, views, cfg=cfg)
     _write(conn, result, videos, shorts_max_seconds)
     return result
 

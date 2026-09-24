@@ -42,9 +42,9 @@ def shorts_max_seconds(config: dict[str, Any]) -> int:
 class DiscoveryConfig:
     """``discovery:`` in scoring.yaml: the competitor similarity filter (006)."""
 
-    size_band_factor: float
-    small_own_subs: int
-    small_band_max: int
+    subs_min: int
+    subs_max: int
+    hit_views_min: int
     shorts_share_min: float
     keyword_overlap_min: int
 
@@ -62,10 +62,10 @@ def discovery_config(config: dict[str, Any]) -> DiscoveryConfig:
                 f"discovery.{f.name} must be a non-negative number in scoring.yaml, got {value!r}"
             )
         values[f.name] = int(value) if f.type == "int" else float(value)
-    if values["size_band_factor"] < 1 or values["shorts_share_min"] > 1:
-        raise ScoringConfigError(
-            "discovery.size_band_factor must be ≥ 1 and shorts_share_min ≤ 1 in scoring.yaml"
-        )
+    if values["shorts_share_min"] > 1:
+        raise ScoringConfigError("discovery.shorts_share_min must be ≤ 1 in scoring.yaml")
+    if values["subs_max"] and values["subs_max"] < values["subs_min"]:
+        raise ScoringConfigError("discovery.subs_max must be 0 (no cap) or ≥ subs_min")
     return DiscoveryConfig(**values)
 
 

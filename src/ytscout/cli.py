@@ -929,14 +929,13 @@ def cmd_score(args: argparse.Namespace, _extras: list[str]) -> int:
 
 def _discovery_inputs(
     conn: sqlite3.Connection | None, own_channel_id: str
-) -> tuple[list[str], set[str], int | None]:
-    """``(own titles, rejected channel ids, own subs from the latest snapshot)``."""
+) -> tuple[list[str], set[str]]:
+    """``(own titles, rejected channel ids)``."""
     if conn is None:
-        return [], set(), None
+        return [], set()
     titles = repo.recent_titles(conn, own_channel_id, OWN_TITLES)
     rejected = repo.channel_ids_with_status(conn, "rejected")
-    snap = repo.latest_channel_snapshot(conn, own_channel_id)
-    return titles, rejected, snap["subs"] if snap else None
+    return titles, rejected
 
 
 @contextmanager
@@ -1046,7 +1045,7 @@ def cmd_discover(args: argparse.Namespace, _extras: list[str]) -> int:
 
     if args.dry_run:
         with _read_only(db_path) as real:
-            titles, rejected, own_subs = _discovery_inputs(real, channel_id)
+            titles, rejected = _discovery_inputs(real, channel_id)
         if not titles:
             print("note: no own-channel titles in the DB yet; run `collect --own` first")
         conn = _dry_run_connection(db_path)
@@ -1058,7 +1057,6 @@ def cmd_discover(args: argparse.Namespace, _extras: list[str]) -> int:
                 channel_id,
                 titles=titles,
                 rejected=rejected,
-                own_subs_fallback=own_subs,
                 max_queries=max_queries,
                 cfg=cfg,
                 shorts_max_seconds=shorts_max,
@@ -1074,7 +1072,7 @@ def cmd_discover(args: argparse.Namespace, _extras: list[str]) -> int:
 
     conn = connect(db_path)
     try:
-        titles, rejected, own_subs = _discovery_inputs(conn, channel_id)
+        titles, rejected = _discovery_inputs(conn, channel_id)
         if not titles:
             print(
                 "discover: no own-channel titles in the DB; run `collect --own` first",
@@ -1089,7 +1087,6 @@ def cmd_discover(args: argparse.Namespace, _extras: list[str]) -> int:
                 channel_id,
                 titles=titles,
                 rejected=rejected,
-                own_subs_fallback=own_subs,
                 max_queries=max_queries,
                 cfg=cfg,
                 shorts_max_seconds=shorts_max,
@@ -1584,6 +1581,11 @@ def _relative_to_root(settings: Settings):
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    # Windows consoles default to cp1252; a channel title with an emoji must not crash a
+    # command after its work is committed (009). Replace what cannot be encoded.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     parser = build_parser()
     # Stubs accept any flags a later issue will define (`collect --own --max-units 500`)
     # and still exit 2, so run_weekly.ps1 can skip them. Real commands reject unknown flags.
