@@ -255,7 +255,10 @@ def test_screen_views_needs_one_viral_hit() -> None:
 
 def test_discovery_config_is_read_from_scoring_yaml() -> None:
     real = discovery_config(load_scoring(REPO_ROOT / "config" / "scoring.yaml"))
-    assert replace(real, topic_words=CFG.topic_words) == CFG
+    # 009: the shipped threshold is 1 (two content words across the seeds make 2 mean
+    # "all of them"); the fixture config keeps 2 so the "< 2" reasons stay exercised.
+    assert real.keyword_overlap_min == 1
+    assert replace(real, topic_words=CFG.topic_words, keyword_overlap_min=2) == CFG
     assert {"animal", "animals", "wildlife"} <= set(real.topic_words)
 
 

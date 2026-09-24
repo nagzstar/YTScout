@@ -67,8 +67,11 @@ discovery:
   latin_share_min: 0.9
   # Fraction of the channel's search hits at or under shorts_max_seconds.
   shorts_share_min: 0.7
-  # Distinct query words that appear in the channel's hit titles.
-  keyword_overlap_min: 2
+  # Distinct query words that appear in the channel's hit titles. 1, not 2: once the hype
+  # words were stripped (034) the seed queries share only two content words, so 2 meant
+  # "every query word" and the third real run of 009 kept nothing new. The topic_words
+  # screen above is what keeps the subject honest; this only asks for one shared word.
+  keyword_overlap_min: 1
 
 # Competitor metrics (010, DESIGN.md §4.4). Computed per channel × window × format.
 competitor_metrics:
