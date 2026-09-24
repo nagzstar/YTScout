@@ -6,7 +6,7 @@ Full design: [`DESIGN.md`](DESIGN.md). Conventions for working in this repo with
 
 ## Status
 
-Design complete, backlog cut, code not started. `issues/` lists 32 tickets (25 AFK, 7 Active) covering M0–M5.
+M0 in progress. Issue 001 (skeleton, CLI, settings) is closed; `issues/` lists the remaining tickets covering M0–M5.
 
 ## How it gets built
 
@@ -42,26 +42,33 @@ Both run weekly on this PC, store 12 months of history in SQLite, and render to 
    ```
    No Anthropic API key is used anywhere in this project.
 
-## Setup (once M0 lands)
+## Setup
+
+What works today (issue 001): the package installs, the CLI runs, settings load, `doctor`
+reports what is configured. Every other subcommand exits 2 (`not implemented yet`) until
+its issue lands.
 
 ```powershell
 git clone <this repo> C:\Users\nagaj\git\YTScout
 cd C:\Users\nagaj\git\YTScout
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
+python -m venv .venv                                  # Python 3.12 or newer
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 
 copy .env.example .env
 # edit .env: YT_API_KEY, YT_CHANNEL_ID (the client secret and token paths can stay as they are)
 copy config\settings.example.yaml config\settings.yaml
-# edit settings.yaml: usd_gbp, pipeline_repo_path
+# edit settings.yaml: own_channel_id (or leave "" to use YT_CHANNEL_ID), usd_gbp, pipeline_repo_path
 
-python -m ytscout doctor          # checks API key, OAuth token, claude login, PATH
-python -m ytscout collect --own   # first pull of your own channel
-python -m ytscout dashboard       # builds dashboard\index.html — open it in a browser
+.\.venv\Scripts\python.exe -m ytscout --help
+.\.venv\Scripts\python.exe -m ytscout doctor          # exit 0 when settings load; names secret files, never prints them
 ```
 
-`python -m ytscout auth` opens a browser window for Google OAuth consent. The token is stored at `YT_TOKEN_PATH` (`scripts\.secrets\token.json`, gitignored) and never committed.
+Settings resolve against the repo root (the folder holding `.env` and `pyproject.toml`), found
+by walking up from the current directory, so the commands work from any subfolder. A real
+environment variable beats the same key in `.env`.
+
+Coming with later issues: `collect --own` (004), `dashboard` (007), `auth` for the Google OAuth
+consent (011/012; the token is stored at `YT_TOKEN_PATH`, gitignored, never committed).
 
 ## Weekly run
 

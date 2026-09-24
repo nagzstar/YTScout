@@ -1,0 +1,32 @@
+# YT Scout settings. Copy to config/settings.yaml (gitignored) and edit.
+# Secrets do NOT go here: the API key, OAuth client secret path, token path and the
+# channel-ID fallback live in .env (see .env.example). Loaded by ytscout.settings.
+
+# Your channel's ID (starts with UC). Required. If left empty, YT_CHANNEL_ID from .env
+# is used instead.
+own_channel_id: ""
+
+# Where SQLite, packets and decisions.json live. Relative paths resolve against the repo
+# root, not the current directory.
+data_dir: data
+
+# USD -> GBP rate used to turn RPM estimates into £/month.
+usd_gbp: 0.78
+
+# The production pipeline repo, read once by the M3 pipeline audit (issue 019).
+pipeline_repo_path: 'C:\Users\nagaj\git\top-five-animals-1'
+
+# How many videos per month you plan to publish in each format. Drives the manual-hours
+# side of the niche score (DESIGN.md §6.4).
+videos_per_month:
+  shorts: 20
+  longform: 4
+
+# YouTube Data API budget. The project allows 10,000 units/day; the ledger stops at
+# daily_cap so a bad day never trips the hard limit.
+quota:
+  daily_cap: 9000
+
+# Claude Code model for `claude -p` calls. null = Claude Code's default.
+claude:
+  model: null

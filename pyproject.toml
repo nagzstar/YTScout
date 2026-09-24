@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ytscout"
+version = "0.1.0"
+description = "Scouts YouTube niches and analyses competitors for Countdown Animal Kingdom."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "google-api-python-client>=2,<3",
+    "google-auth-oauthlib>=1,<2",
+    "google-auth-httplib2>=0.2,<1",
+    "youtube-transcript-api>=1,<2",
+    "pyyaml>=6,<7",
+    "jinja2>=3,<4",
+    "python-dotenv>=1,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<10",
+    "ruff>=0.5,<1",
+]
+
+[project.scripts]
+ytscout = "ytscout.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# lazyboy/ is the unattended runner and its guard hook: self-contained tooling with its own
+# style, not part of the package. Leave it alone.
+extend-exclude = ["lazyboy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
