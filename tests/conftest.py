@@ -6,7 +6,13 @@ at its first newline and the prompt argument is multi-line. So the fixture build
 ``claude.exe`` from the console launcher pip vendors (``distlib``'s ``t64.exe``): the
 launcher runs ``python.exe <itself> <args>``, Python treats the exe as a zipapp and runs
 the ``__main__.py`` appended to it, which hands over to ``fake_claude.py``. Nothing is
-compiled and nothing is committed; the exe lives in ``tmp_path``.
+compiled and nothing is committed; the exe lives in ``tests/fake_claude/build/`` (gitignored).
+
+The exe is built **once**, with deterministic bytes, into one stable folder rather than into
+each test's ``tmp_path``. Antivirus (Avast CyberCapture) holds every never-seen executable
+for cloud analysis; one fresh exe per test meant a dozen holds per run and killed sessions.
+One stable file has one hash, which the AV learns once. Per-test state travels in env vars,
+so sharing the folder between tests is safe.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ import pytest
 
 FAKE_DIR = Path(__file__).parent / "fake_claude"
 FAKE_SCRIPT = FAKE_DIR / "fake_claude.py"
+BUILD_DIR = FAKE_DIR / "build"  # covered by the ``build/`` rule in .gitignore
 
 
 def _launcher() -> Path:
@@ -40,8 +47,8 @@ def _launcher() -> Path:
     return path
 
 
-def build_windows_exe(target: Path) -> None:
-    """``target`` (``claude.exe``) = distlib launcher + ``#!python`` + zip(``__main__.py``)."""
+def windows_exe_bytes() -> bytes:
+    """``claude.exe`` = distlib launcher + ``#!python`` + zip(``__main__.py``), byte-stable."""
     main_py = (
         "import runpy, sys\n"
         f"sys.argv[0] = {str(FAKE_SCRIPT)!r}\n"
@@ -49,9 +56,22 @@ def build_windows_exe(target: Path) -> None:
     )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("__main__.py", main_py)
+        # Fixed timestamp: same inputs must give the same bytes, so the AV sees one hash.
+        zf.writestr(zipfile.ZipInfo("__main__.py", date_time=(2020, 1, 1, 0, 0, 0)), main_py)
     shebang = f'#!"{sys.executable}"\r\n'.encode()
-    target.write_bytes(_launcher().read_bytes() + shebang + buf.getvalue())
+    return _launcher().read_bytes() + shebang + buf.getvalue()
+
+
+def windows_bin_dir() -> Path:
+    """The stable fake-``claude`` folder for Windows, (re)built only when its bytes would change."""
+    BUILD_DIR.mkdir(exist_ok=True)
+    exe = BUILD_DIR / "claude.exe"
+    wanted = windows_exe_bytes()
+    if not exe.is_file() or exe.read_bytes() != wanted:
+        exe.write_bytes(wanted)
+    for name in ("claude.cmd", FAKE_SCRIPT.name):
+        shutil.copy(FAKE_DIR / name, BUILD_DIR / name)
+    return BUILD_DIR
 
 
 @dataclass
@@ -71,13 +91,12 @@ class FakeClaude:
 @pytest.fixture
 def fake_claude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeClaude:
     """A fake ``claude`` first on PATH, recording each call to ``record_path``."""
-    bin_dir = tmp_path / "fake-claude-bin"
-    bin_dir.mkdir()
-    shutil.copy(FAKE_SCRIPT, bin_dir / FAKE_SCRIPT.name)
     if sys.platform == "win32":
-        shutil.copy(FAKE_DIR / "claude.cmd", bin_dir / "claude.cmd")
-        build_windows_exe(bin_dir / "claude.exe")
+        bin_dir = windows_bin_dir()
     else:
+        bin_dir = tmp_path / "fake-claude-bin"
+        bin_dir.mkdir()
+        shutil.copy(FAKE_SCRIPT, bin_dir / FAKE_SCRIPT.name)
         shutil.copy(FAKE_DIR / "claude", bin_dir / "claude")
         (bin_dir / "claude").chmod(0o755)
     monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", ""))
