@@ -13,6 +13,9 @@
   --line: #dcdce0;
   --panel: #ffffff;
   --accent: #2563eb;
+  /* Categorical series, fixed order (the dataviz skill's validated palette). */
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -22,6 +25,8 @@
     --line: #34343a;
     --panel: #1f1f23;
     --accent: #6d9bff;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
   }
 }
 * { box-sizing: border-box; }
@@ -56,6 +61,13 @@ ul.reasons { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px
 .actions { white-space: nowrap; }
 button { font: inherit; font-size: 13px; padding: 2px 8px; margin-right: 4px; }
 button:disabled { cursor: not-allowed; }
+.muted { color: var(--muted); font-size: 13px; }
+tr.own td { font-weight: 700; }
+.toggle { display: inline-flex; gap: 0; margin: 4px 0 4px; }
+.toggle button { margin: 0; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 3px 12px; }
+.toggle button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .note { background: var(--panel); border: 1px solid var(--accent); border-radius: 6px; padding: 8px 12px; }
 footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(--muted); font-size: 13px; }
 </style>
@@ -80,6 +92,7 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
   <nav>
     <a href="#own">Own channel</a>
     <a href="#competitors">Competitors</a>
+    <a href="#side-by-side">Side by side</a>
     <a href="#niches">Niches</a>
     <a href="#findings">Findings</a>
     <a href="#runs">Runs</a>
@@ -128,6 +141,72 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
       scales: {
         x: { ticks: { color: muted, maxTicksLimit: 8 }, grid: { color: line } },
         y: { ticks: { color: muted }, grid: { color: line } }
+      }
+    }
+  });
+})();
+</script>
+<script>
+(function () {
+  "use strict";
+  // 90d / 365d toggle for the side-by-side tables.
+  var buttons = document.querySelectorAll("button[data-window]");
+  Array.prototype.forEach.call(buttons, function (btn) {
+    btn.addEventListener("click", function () {
+      var want = btn.getAttribute("data-window");
+      Array.prototype.forEach.call(buttons, function (b) {
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-window-panel]"), function (p) {
+        p.hidden = p.getAttribute("data-window-panel") !== want;
+      });
+    });
+  });
+
+  // Views by publish month: one line per channel, own first in series slot 1.
+  var el = document.getElementById("monthly-data");
+  var canvas = document.getElementById("monthly-chart");
+  if (!el || !canvas || typeof Chart === "undefined") { return; }
+  var data = JSON.parse(el.textContent);
+  var css = getComputedStyle(document.documentElement);
+  var muted = css.getPropertyValue("--muted").trim();
+  var fg = css.getPropertyValue("--fg").trim();
+  var line = css.getPropertyValue("--line").trim();
+  var slot = 0;
+  new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: data.labels,
+      datasets: data.series.map(function (s) {
+        var color = s.other ? muted : css.getPropertyValue("--series-" + (++slot)).trim();
+        return {
+          label: s.name,
+          data: s.data,
+          borderColor: color,
+          backgroundColor: color,
+          borderWidth: 2,
+          borderDash: s.other ? [4, 3] : [],
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0
+        };
+      })
+    },
+    options: {
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "bottom", labels: { color: fg, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: function (ctx) { return ctx.dataset.label + ": " + ctx.parsed.y.toLocaleString("en-GB"); }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: muted }, grid: { color: line } },
+        y: { beginAtZero: true, ticks: { color: muted }, grid: { color: line } }
       }
     }
   });

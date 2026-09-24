@@ -18,6 +18,9 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from ytscout.score import WINDOWS, load_videos
+from ytscout.scoring.metrics import FORMATS, month_keys, monthly_views, top_bucket
+from ytscout.store import repo
 from ytscout.store.db import to_utc_iso, utc_now
 from ytscout.youtube.quota import today_pacific
 
@@ -26,6 +29,10 @@ TEMPLATES_DIR = PACKAGE_DIR / "templates"
 CHARTJS_PATH = PACKAGE_DIR / "static" / "chart.umd.js"
 DEFAULT_OUT_RELPATH = Path("dashboard") / "index.html"
 OWN_VIDEOS_SHOWN = 20
+CHART_MONTHS = 12
+# At most 8 lines (the validated categorical palette); past that the smallest channels
+# fold into one "Other" line.
+CHART_SERIES = 8
 WATCH_URL = "https://www.youtube.com/watch?v="
 
 # A source map comment would make devtools try to fetch chart.umd.js.map next to the page.
@@ -45,6 +52,11 @@ class Dashboard:
     own_videos: list[dict[str, Any]] = field(default_factory=list)
     candidates: list[dict[str, Any]] = field(default_factory=list)
     approved: list[dict[str, Any]] = field(default_factory=list)
+    # {window: {format: [row per tracked channel, own first]}} from the latest metrics.
+    metrics: dict[str, dict[str, list[dict[str, Any]]]] = field(default_factory=dict)
+    metrics_at: str | None = None
+    # {"labels": ["YYYY-MM", ...], "series": [{"name", "own", "data"}]}: views by publish month.
+    monthly: dict[str, Any] = field(default_factory=dict)
 
 
 def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -144,7 +156,79 @@ def load(conn: sqlite3.Connection, now: datetime | None = None) -> Dashboard:
             " ORDER BY c.status, c.title, c.id",
         )
     ]
+    _load_metrics(conn, dash, moment)
     return dash
+
+
+def _metric_row(channel: sqlite3.Row, own_id: str | None, m: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": channel["id"],
+        "title": channel["title"] or channel["id"],
+        "own": channel["id"] == own_id,
+        "video_count": m.get("video_count"),
+        "uploads_per_week": m.get("uploads_per_week"),
+        "views_median": m.get("views_median"),
+        "views_p25": m.get("views_p25"),
+        "views_p75": m.get("views_p75"),
+        "views_per_sub": m.get("views_per_sub"),
+        "outlier_count": m.get("outlier_count"),
+        "top_bucket": top_bucket(m.get("length_buckets") or {}),
+        "share": m.get("share_of_tracked_views"),
+    }
+
+
+def _load_metrics(conn: sqlite3.Connection, dash: Dashboard, now: datetime) -> None:
+    """The side-by-side tables (latest ``channel_metrics``) and the monthly-views chart."""
+    channels = repo.tracked_channels(conn)
+    if not channels:
+        return
+    own_id = dash.own["id"] if dash.own else None
+    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in repo.latest_channel_metrics(conn):
+        latest[(row["channel_id"], row["window"], row["format"])] = json.loads(row["metrics_json"])
+        if dash.metrics_at is None or row["computed_at"] > dash.metrics_at:
+            dash.metrics_at = row["computed_at"]
+    if latest:
+        dash.metrics = {
+            window: {
+                fmt: [
+                    _metric_row(c, own_id, latest[(c["id"], window, fmt)])
+                    for c in channels
+                    if (c["id"], window, fmt) in latest
+                ]
+                for fmt in FORMATS
+            }
+            for window in WINDOWS
+        }
+
+    series = [
+        {
+            "name": c["title"] or c["id"],
+            "own": c["id"] == own_id,
+            "data": list(
+                monthly_views(load_videos(conn, c["id"]), now=now, months=CHART_MONTHS).values()
+            ),
+        }
+        for c in channels
+    ]
+    if not any(any(s["data"]) for s in series):
+        return
+    # Own first, then the biggest competitors; the tail folds into "Other".
+    own = [s for s in series if s["own"]]
+    rest = sorted((s for s in series if not s["own"]), key=lambda s: -sum(s["data"]))
+    keep = len(rest) if len(own) + len(rest) <= CHART_SERIES else CHART_SERIES - 1 - len(own)
+    shown = own + rest[:keep]
+    folded = rest[keep:]
+    if folded:
+        shown.append(
+            {
+                "name": f"Other ({len(folded)} channels)",
+                "own": False,
+                "other": True,
+                "data": [sum(col) for col in zip(*(s["data"] for s in folded), strict=True)],
+            }
+        )
+    dash.monthly = {"labels": month_keys(now, CHART_MONTHS), "series": shown}
 
 
 # --- rendering -----------------------------------------------------------------------------
@@ -160,6 +244,14 @@ def _duration(seconds: Any) -> str:
     minutes, secs = divmod(int(seconds), 60)
     hours, minutes = divmod(minutes, 60)
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+def _decimal(value: Any, places: int = 2) -> str:
+    return "–" if value is None else f"{value:,.{places}f}"
+
+
+def _percent(value: Any) -> str:
+    return "–" if value is None else f"{value * 100:.0f}%"
 
 
 def _day(timestamp: Any) -> str:
@@ -185,6 +277,8 @@ def environment() -> Environment:
     env.filters["number"] = _number
     env.filters["duration"] = _duration
     env.filters["day"] = _day
+    env.filters["decimal"] = _decimal
+    env.filters["percent"] = _percent
     return env
 
 

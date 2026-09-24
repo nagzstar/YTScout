@@ -225,6 +225,61 @@ def latest_video_snapshot(conn: sqlite3.Connection, video_id: str) -> sqlite3.Ro
     ).fetchone()
 
 
+def tracked_channels(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """The own channel first, then every ``approved``/``watch`` channel, by title."""
+    return conn.execute(
+        "SELECT * FROM channels WHERE role = 'own' OR status IN ('approved', 'watch')"
+        " ORDER BY role != 'own', title, id"
+    ).fetchall()
+
+
+def video_snapshots_for_channel(conn: sqlite3.Connection, channel_id: str) -> list[sqlite3.Row]:
+    """Every snapshot of the channel's videos, oldest first per video."""
+    return conn.execute(
+        "SELECT s.* FROM video_snapshots s JOIN videos v ON v.id = s.video_id"
+        " WHERE v.channel_id = ? ORDER BY s.video_id, s.captured_at, s.id",
+        (channel_id,),
+    ).fetchall()
+
+
+# --- channel metrics ----------------------------------------------------------------------
+
+
+def add_channel_metrics(
+    conn: sqlite3.Connection,
+    channel_id: str,
+    *,
+    window: str,
+    fmt: str,
+    metrics: dict,
+    computed_at: str | datetime | None = None,
+) -> int:
+    """Append one ``channel_metrics`` row; readers take the latest per channel/window/format."""
+    cur = conn.execute(
+        "INSERT INTO channel_metrics (channel_id, computed_at, window, format, metrics_json)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (
+            channel_id,
+            _ts(computed_at) or now_utc(),
+            window,
+            fmt,
+            json.dumps(metrics, ensure_ascii=False, sort_keys=True),
+        ),
+    )
+    return int(cur.lastrowid or 0)
+
+
+def latest_channel_metrics(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """The newest ``channel_metrics`` row per channel × window × format."""
+    return conn.execute(
+        "SELECT m.* FROM channel_metrics m WHERE m.id = ("
+        "  SELECT id FROM channel_metrics x WHERE x.channel_id = m.channel_id"
+        "  AND x.window = m.window AND x.format = m.format"
+        "  ORDER BY x.computed_at DESC, x.id DESC LIMIT 1)"
+        " ORDER BY m.channel_id, m.window, m.format"
+    ).fetchall()
+
+
 # --- quota ledger -------------------------------------------------------------------------
 
 

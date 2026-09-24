@@ -45,7 +45,21 @@ def _video_id(item: Mapping[str, Any]) -> str | None:
     return details.get("videoId") or resource.get("videoId")
 
 
-def _batches(ids: Sequence[str]) -> Iterator[Sequence[str]]:
+def upload_page(item_page: Mapping[str, Any]) -> list[tuple[str, str | None]]:
+    """``(video id, published_at)`` for each item of one ``playlistItems.list`` page."""
+    entries: list[tuple[str, str | None]] = []
+    for item in item_page.get("items", []):
+        video_id = _video_id(item)
+        if video_id:
+            details = item.get("contentDetails") or {}
+            published = details.get("videoPublishedAt") or (item.get("snippet") or {}).get(
+                "publishedAt"
+            )
+            entries.append((video_id, published))
+    return entries
+
+
+def batches(ids: Sequence[str]) -> Iterator[Sequence[str]]:
     for start in range(0, len(ids), MAX_IDS_PER_CALL):
         yield ids[start : start + MAX_IDS_PER_CALL]
 
@@ -114,7 +128,7 @@ def walk_uploads(
                 break
         if dry_run and not ids:
             ids = list(DRY_RUN_VIDEO_IDS)
-        for batch in _batches(ids):
+        for batch in batches(ids):
             response = api.videos(batch)
             with conn:
                 for item in response.get("items", []):

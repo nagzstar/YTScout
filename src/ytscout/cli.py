@@ -20,6 +20,7 @@ from pathlib import Path
 from ytscout import __version__, dashboard
 from ytscout.audit import COVERAGE_RELPATH, STEPS_RELPATH, AuditError, format_table, run_audit
 from ytscout.collect import ChannelNotFound, Counts, collect_own
+from ytscout.collect.competitors import RECENT_DAYS, CompetitorResult, collect_competitors
 from ytscout.collect.discover import (
     DEFAULT_MAX_SEARCHES,
     MAX_SEARCHES,
@@ -31,13 +32,16 @@ from ytscout.collect.discover import (
     worst_case_units,
 )
 from ytscout.dashboard import serve as serve_mod
+from ytscout.score import WINDOWS, score_competitors
 from ytscout.scoring import (
     SCORING_RELPATH,
     ScoringConfigError,
     discovery_config,
     load_scoring,
+    metrics_config,
     shorts_max_seconds,
 )
+from ytscout.scoring.metrics import FORMATS
 from ytscout.settings import (
     DEFAULT_DATA_DIR,
     DEFAULT_QUOTA_DAILY_CAP,
@@ -47,7 +51,7 @@ from ytscout.settings import (
     find_repo_root,
     load,
 )
-from ytscout.store import DB_FILENAME, connect, default_db_path, read_copy, repo
+from ytscout.store import DB_FILENAME, connect, default_db_path, read_copy, repo, utc_now
 from ytscout.youtube import (
     DataApi,
     DryRunTransport,
@@ -69,7 +73,6 @@ STUBS: dict[str, tuple[str, str]] = {
     "auth": ("OAuth consent for the Analytics API", "011"),
     "packet": ("write one analysis packet for Claude", "016"),
     "analyse": ("run Claude analyses over packets", "017"),
-    "score": ("compute scores from the DB", "024"),
     "scout": ("the niche pipeline: propose / validate / tag / snowball / sensitivity", "021"),
 }
 
@@ -79,6 +82,7 @@ COMMANDS: tuple[str, ...] = (
     "discover",
     "dashboard",
     "serve",
+    "score",
     *STUBS,
     "audit",
 )
@@ -107,10 +111,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--own", action="store_true", help="the own channel: metadata, snapshot, newest uploads"
     )
     collect.add_argument(
+        "--competitors",
+        action="store_true",
+        help="weekly refresh of the own channel and every approved/watch competitor",
+    )
+    collect.add_argument(
         "--videos",
         type=_positive_int,
         default=DEFAULT_OWN_VIDEOS,
-        help=f"newest uploads to collect (default {DEFAULT_OWN_VIDEOS})",
+        help=f"--own: newest uploads to collect (default {DEFAULT_OWN_VIDEOS})",
     )
     _add_quota_flags(collect)
     collect.set_defaults(func=cmd_collect)
@@ -127,6 +136,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_quota_flags(disc)
     disc.set_defaults(func=cmd_discover)
+
+    score = sub.add_parser("score", help="compute metrics and scores from the DB (no API)")
+    score.add_argument(
+        "--competitors",
+        action="store_true",
+        help="channel metrics for every tracked channel: 90d/365d x shorts/longform",
+    )
+    score.set_defaults(func=cmd_score)
 
     dash = sub.add_parser(
         "dashboard", help="build the static dashboard HTML from the DB (no API, no network)"
@@ -301,12 +318,12 @@ def _print_summary(counts: Counts, ledger: Ledger) -> None:
 
 
 def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
-    """``collect --own``: channels → uploads playlist → videos → snapshots.
+    """``collect --own`` or ``--competitors``: channels → uploads → videos → snapshots.
 
     Exit 3 when a quota cap stops the run; everything collected before it is committed.
     """
-    if not args.own:
-        print("ytscout collect: choose a source: --own", file=sys.stderr)
+    if args.own == args.competitors:
+        print("ytscout collect: choose one source: --own or --competitors", file=sys.stderr)
         return EXIT_ERROR
     if not _require_quota_flag(args, "collect"):
         return EXIT_ERROR
@@ -338,6 +355,9 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
     except ValueError as exc:
         print(f"collect: {exc}", file=sys.stderr)
         return EXIT_ERROR
+
+    if args.competitors:
+        return _collect_competitors(args, channel_id, daily_cap, db_path, transport, shorts_max)
 
     if args.dry_run:
         conn = _dry_run_connection(db_path)
@@ -386,6 +406,145 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
         return EXIT_OK
     finally:
         conn.close()
+
+
+def _tracked(conn: sqlite3.Connection | None) -> list[dict]:
+    """Tracked channel rows as dicts; none when the DB is absent or predates the schema."""
+    if conn is None:
+        return []
+    try:
+        return [dict(row) for row in repo.tracked_channels(conn)]
+    except sqlite3.Error as exc:
+        print(f"note: could not read tracked channels: {exc}", file=sys.stderr)
+        return []
+
+
+def _print_competitor_plan(result: CompetitorResult, transport: DryRunTransport) -> None:
+    print("dry run: planned YouTube Data API calls (nothing is sent, nothing is written)")
+    print(
+        f"  channels.list x {result.channel_batches} (50 ids per call)"
+        f" - {result.channel_units} unit(s)"
+    )
+    for r in result.reports:
+        name = f"{r.channel_id} ({r.title})" if r.title else r.channel_id
+        print(
+            f"  {name}: playlistItems.list x {r.pages}, videos.list x {r.video_batches}"
+            f" - {r.units} unit(s)"
+        )
+    print(
+        f"planned: {len(transport.calls)} calls, {transport.units} units for "
+        f"{len(result.reports)} tracked channel(s)"
+    )
+    print(
+        "each channel pages on until a page's oldest video is known and older than "
+        f"{RECENT_DAYS} days; a channel's first refresh walks its whole playlist"
+    )
+
+
+def _print_competitor_summary(result: CompetitorResult, ledger: Ledger) -> None:
+    for r in result.reports:
+        print(
+            f"  {r.channel_id} {r.title or ''}: {r.pages} page(s), {r.videos} video(s),"
+            f" {r.units} unit(s); {r.stop}"
+        )
+    c = result.counts
+    print(
+        f"collect --competitors: channels {c.channels}, videos {c.videos}, snapshots "
+        f"{c.snapshots} ({c.channel_snapshots} channel, {c.video_snapshots} video); "
+        f"units this run {ledger.run_used}, units today {ledger.used_today()}"
+    )
+
+
+def _collect_competitors(
+    args: argparse.Namespace,
+    own_channel_id: str,
+    daily_cap: int,
+    db_path: Path,
+    transport: Transport,
+    shorts_max: int,
+) -> int:
+    """``collect --competitors``; exit 3 when a quota cap stops it (batches so far kept)."""
+    now = utc_now()
+    if args.dry_run:
+        with _read_only(db_path) as real:
+            channels = _tracked(real)
+        conn = _dry_run_connection(db_path)
+        try:
+            ledger = Ledger(conn, daily_cap, run_cap=args.max_units, dry_run=True)
+            result = collect_competitors(
+                DataApi(ledger, transport),
+                conn,
+                channels,
+                own_channel_id=own_channel_id,
+                shorts_max_seconds=shorts_max,
+                now=now,
+            )
+        finally:
+            conn.close()
+        if isinstance(transport, DryRunTransport):
+            _print_competitor_plan(result, transport)
+        if result.stopped is not None:
+            print(f"a real run would stop here: {result.stopped}", file=sys.stderr)
+            return EXIT_QUOTA_EXHAUSTED
+        return EXIT_OK
+
+    conn = connect(db_path)
+    try:
+        ledger = Ledger(conn, daily_cap, run_cap=args.max_units)
+        with recorded_run(conn, "collect_competitors") as run:
+            result = collect_competitors(
+                DataApi(ledger, transport),
+                conn,
+                [dict(row) for row in repo.tracked_channels(conn)],
+                own_channel_id=own_channel_id,
+                shorts_max_seconds=shorts_max,
+                now=now,
+            )
+            if result.stopped is not None:
+                run.status = "quota_exhausted"
+        _print_competitor_summary(result, ledger)
+        if result.stopped is not None:
+            print(
+                f"stopped early; everything above is committed: {result.stopped}", file=sys.stderr
+            )
+            return EXIT_QUOTA_EXHAUSTED
+        return EXIT_OK
+    finally:
+        conn.close()
+
+
+def cmd_score(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``score --competitors``: append channel_metrics rows. No API calls."""
+    if not args.competitors:
+        print(
+            "ytscout score: choose what to score: --competitors (niche scores: issue 024)",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    found = _dashboard_db_path("score")
+    if found is None:
+        return EXIT_ERROR
+    root, db_path = found
+    try:
+        cfg = metrics_config(load_scoring(root / SCORING_RELPATH))
+    except ScoringConfigError as exc:
+        print(f"score: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if not db_path.is_file():
+        print(f"score: no database at {db_path}; run `collect` first", file=sys.stderr)
+        return EXIT_ERROR
+    conn = connect(db_path)
+    try:
+        with recorded_run(conn, "score_competitors"):
+            result = score_competitors(conn, config=cfg, now=utc_now())
+    finally:
+        conn.close()
+    print(
+        f"score --competitors: {result.rows} channel_metrics rows for {result.channels}"
+        f" channel(s) x {len(WINDOWS)} windows x {len(FORMATS)} formats"
+        f" (computed_at {result.computed_at})"
+    )
+    return EXIT_OK
 
 
 def _discovery_inputs(

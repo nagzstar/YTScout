@@ -6,6 +6,7 @@ from ytscout.scoring.config import (
     ScoringConfigError,
     discovery_config,
     load_scoring,
+    metrics_config,
     shorts_max_seconds,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "ScoringConfigError",
     "discovery_config",
     "load_scoring",
+    "metrics_config",
     "shorts_max_seconds",
 ]

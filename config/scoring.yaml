@@ -16,3 +16,19 @@ discovery:
   shorts_share_min: 0.7
   # Distinct query words that appear in the channel's hit titles.
   keyword_overlap_min: 2
+
+# Competitor metrics (010, DESIGN.md §4.4). Computed per channel × window × format.
+competitor_metrics:
+  # A video is an outlier when its views are at least this many times ...
+  outlier_multiplier: 3
+  # ... the median views of the channel's newest this-many videos in the same format.
+  outlier_window_videos: 30
+  # Length distribution. A video goes into the first bucket whose max_seconds it does not
+  # exceed, so a 180 s Short is "60–180s". The last bucket has no top (max_seconds: null).
+  length_buckets:
+    - {label: "≤30s", max_seconds: 30}
+    - {label: "30–60s", max_seconds: 60}
+    - {label: "60–180s", max_seconds: 180}
+    - {label: "3–8min", max_seconds: 480}
+    - {label: "8–20min", max_seconds: 1200}
+    - {label: "20min+", max_seconds: null}

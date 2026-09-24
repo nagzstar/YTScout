@@ -49,3 +49,71 @@
   <p class="empty">Nothing yet. Approve or watch a candidate first.</p>
   {% endif %}
 </section>
+<section id="side-by-side">
+  <h2>Side by side</h2>
+  {% if not d.metrics %}
+  <p class="empty">Nothing yet. Run <code>ytscout collect --competitors --max-units 200</code>, then <code>ytscout score --competitors</code>.</p>
+  {% else %}
+  <p class="muted">Latest <code>score --competitors</code>: {{ d.metrics_at | day }}. Own channel in bold. Views are each video's latest snapshot.</p>
+  <div class="toggle" role="group" aria-label="Window">
+    {% for window in d.metrics %}
+    <button type="button" data-window="{{ window }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ window }}</button>
+    {% endfor %}
+  </div>
+  {% for window, formats in d.metrics.items() %}
+  <div class="window-panel" data-window-panel="{{ window }}"{% if not loop.first %} hidden{% endif %}>
+    {% for fmt, rows in formats.items() %}
+    <h3>{{ "Shorts" if fmt == "shorts" else "Long-form" }}, last {{ window }}</h3>
+    {% if rows | selectattr("video_count") | list %}
+    <div class="table-wrap">
+    <table class="metrics">
+      <thead><tr>
+        <th>Channel</th><th class="num">Videos</th><th class="num">Uploads/wk</th><th class="num">Median views</th>
+        <th class="num">p25–p75</th><th class="num">Views/sub</th><th class="num">Outliers</th><th>Top length</th><th class="num">View share</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr data-channel-id="{{ r.id }}"{% if r.own %} class="own"{% endif %}>
+          <td>{{ r.title }}</td>
+          <td class="num">{{ r.video_count | number }}</td>
+          <td class="num">{{ r.uploads_per_week | decimal(1) }}</td>
+          <td class="num">{{ r.views_median | decimal(0) }}</td>
+          <td class="num">{{ r.views_p25 | decimal(0) }}–{{ r.views_p75 | decimal(0) }}</td>
+          <td class="num">{{ r.views_per_sub | decimal(2) }}</td>
+          <td class="num">{{ r.outlier_count | number }}</td>
+          <td>{{ r.top_bucket or "–" }}</td>
+          <td class="num">{{ r.share | percent }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="empty">No {{ "Shorts" if fmt == "shorts" else "long-form videos" }} published by a tracked channel in the last {{ window }}.</p>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% endif %}
+  <h3>Views by publish month, last 12 months</h3>
+  {% if d.monthly %}
+  <p class="muted">An approximation: each video's latest views, summed by the month it was published, not the views earned in that month.</p>
+  <div class="panel chart"><canvas id="monthly-chart" aria-label="Views by publish month per channel" role="img"></canvas></div>
+  <script type="application/json" id="monthly-data">{{ d.monthly | tojson }}</script>
+  <details>
+    <summary>Table view</summary>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Channel</th>{% for m in d.monthly.labels %}<th class="num">{{ m }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for s in d.monthly.series %}
+        <tr{% if s.own %} class="own"{% endif %}><td>{{ s.name }}</td>{% for v in s.data %}<td class="num">{{ v | number }}</td>{% endfor %}</tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+  {% else %}
+  <p class="empty">Nothing yet: no tracked channel has videos with views in the last 12 months.</p>
+  {% endif %}
+</section>
