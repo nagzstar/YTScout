@@ -108,3 +108,22 @@ def connect(path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     migrate(conn)
     return conn
+
+
+def read_copy(path: Path) -> sqlite3.Connection:
+    """An in-memory copy of the database at ``path``, migrated to the current schema.
+
+    The real file is opened ``mode=ro`` and never written, so a reader (the dashboard) can
+    run against an older schema without migrating it. A missing file gives an empty DB.
+    """
+    path = Path(path)
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    if path.is_file():
+        source = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            source.backup(conn)
+        finally:
+            source.close()
+    migrate(conn)
+    return conn

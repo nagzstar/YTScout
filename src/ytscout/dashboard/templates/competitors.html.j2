@@ -1,0 +1,50 @@
+<section id="competitors">
+  <h2>Competitors</h2>
+  <h3>Candidates ({{ d.candidates | length }})</h3>
+  {% if d.candidates %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th>Channel</th><th class="num">Subscribers</th><th class="num">Hits</th><th>Why suggested</th><th>Review</th>
+    </tr></thead>
+    <tbody>
+    {% for c in d.candidates %}
+      <tr data-channel-id="{{ c.id }}">
+        <td>{{ c.title or c.id }}</td>
+        <td class="num">{{ c.subs | number }}</td>
+        <td class="num">{{ c.hit_count | number }}</td>
+        <td>{% if c.reasons %}<ul class="reasons">{% for r in c.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% else %}–{% endif %}</td>
+        <td class="actions">
+          {# 008 wires these to `ytscout serve`; until then they are inert. #}
+          <button type="button" disabled title="start `ytscout serve`" data-decision="approved">Approve</button>
+          <button type="button" disabled title="start `ytscout serve`" data-decision="rejected">Reject</button>
+          <button type="button" disabled title="start `ytscout serve`" data-decision="watch">Watch</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">Nothing yet. Run <code>ytscout discover</code> to suggest candidates.</p>
+  {% endif %}
+  <h3>Approved ({{ d.approved | length }})</h3>
+  {% if d.approved %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Channel</th><th>Status</th><th class="num">Subscribers</th></tr></thead>
+    <tbody>
+    {% for c in d.approved %}
+      <tr data-channel-id="{{ c.id }}">
+        <td>{{ c.title or c.id }}</td>
+        <td>{{ c.status }}</td>
+        <td class="num">{{ c.subs | number }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">Nothing yet. Approve or watch a candidate first.</p>
+  {% endif %}
+</section>

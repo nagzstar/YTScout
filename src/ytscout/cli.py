@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from ytscout import __version__
+from ytscout import __version__, dashboard
 from ytscout.audit import COVERAGE_RELPATH, STEPS_RELPATH, AuditError, format_table, run_audit
 from ytscout.collect import ChannelNotFound, Counts, collect_own
 from ytscout.collect.discover import (
@@ -46,7 +46,7 @@ from ytscout.settings import (
     find_repo_root,
     load,
 )
-from ytscout.store import DB_FILENAME, connect, default_db_path, repo
+from ytscout.store import DB_FILENAME, connect, default_db_path, read_copy, repo
 from ytscout.youtube import (
     DataApi,
     DryRunTransport,
@@ -70,11 +70,10 @@ STUBS: dict[str, tuple[str, str]] = {
     "analyse": ("run Claude analyses over packets", "017"),
     "score": ("compute scores from the DB", "024"),
     "scout": ("the niche pipeline: propose / validate / tag / snowball / sensitivity", "021"),
-    "dashboard": ("build dashboard/index.html", "007"),
     "serve": ("localhost review server for approve/reject", "008"),
 }
 
-COMMANDS: tuple[str, ...] = ("doctor", "collect", "discover", *STUBS, "audit")
+COMMANDS: tuple[str, ...] = ("doctor", "collect", "discover", "dashboard", *STUBS, "audit")
 
 DEFAULT_OWN_VIDEOS = 200
 # Shown in a --dry-run plan when config/settings.yaml does not exist yet.
@@ -120,6 +119,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_quota_flags(disc)
     disc.set_defaults(func=cmd_discover)
+
+    dash = sub.add_parser(
+        "dashboard", help="build the static dashboard HTML from the DB (no API, no network)"
+    )
+    dash.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=f"output file (default: <repo root>/{dashboard.DEFAULT_OUT_RELPATH.as_posix()})",
+    )
+    dash.set_defaults(func=cmd_dashboard)
 
     for name, (help_text, issue) in STUBS.items():
         stub = sub.add_parser(name, help=f"{help_text} (issue {issue})")
@@ -535,6 +545,36 @@ def cmd_discover(args: argparse.Namespace, _extras: list[str]) -> int:
         return EXIT_OK
     finally:
         conn.close()
+
+
+def cmd_dashboard(args: argparse.Namespace, _extras: list[str]) -> int:
+    """Render the dashboard from a read-only copy of the DB; an absent DB renders empty."""
+    root = find_repo_root()
+    try:
+        settings: Settings | None = load(repo_root=root)
+    except SettingsMissing:
+        settings = None
+    except SettingsError as exc:
+        print(f"dashboard: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+    out = args.out if args.out is not None else root / dashboard.DEFAULT_OUT_RELPATH
+    if not db_path.is_file():
+        print(f"note: no database at {db_path}; building an empty dashboard")
+    try:
+        conn = read_copy(db_path)
+    except sqlite3.Error as exc:
+        print(f"dashboard: could not read {db_path}: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        dash = dashboard.build(conn, out)
+    finally:
+        conn.close()
+    print(
+        f"dashboard: wrote {out} ({out.stat().st_size:,} bytes; {len(dash.own_videos)} own "
+        f"videos, {len(dash.candidates)} candidates, {len(dash.approved)} approved)"
+    )
+    return EXIT_OK
 
 
 def _make_stub(name: str, issue: str):

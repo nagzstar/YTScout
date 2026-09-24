@@ -35,6 +35,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ytscout.store" = ["migrations/*.sql"]
+"ytscout.dashboard" = ["templates/*.j2", "static/*"]
 
 [tool.ruff]
 line-length = 100
