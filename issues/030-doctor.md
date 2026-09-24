@@ -1,7 +1,7 @@
 # 030 — `doctor`: every dependency checked, nothing printed that shouldn't be
 
 **Type**: AFK
-**Blocked by**: 011, 016
+**Blocked by**: 011, 016, 033
 **Add dirs**: none
 **Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/doctor.py, src/ytscout/cli.py (doctor), tests/test_doctor.py
