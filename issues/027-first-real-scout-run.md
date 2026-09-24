@@ -3,6 +3,7 @@
 **Type**: Active
 **Blocked by**: 005, 024, 025
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: data/ytscout.sqlite, dashboard/index.html, config/seed_niches.yaml
 **Milestone**: M4
 

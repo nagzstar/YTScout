@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 016, 019
 **Add dirs**: none
+**Model**: claude-fable-5-1 high
 **Covers**: config/rpm_tiers.yaml, config/seed_niches.yaml, prompts/niche_brainstorm.md, schemas/niche_brainstorm.json, src/ytscout/scout/{__init__,propose}.py, src/ytscout/cli.py (scout), tests/test_scout_propose.py
 **Milestone**: M4
 

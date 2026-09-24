@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 016
 **Add dirs**: none
+**Model**: claude-fable-5-1 high
 **Covers**: prompts/competitor_analysis.md, schemas/competitor_analysis.json, src/ytscout/packets.py (comparison packet), src/ytscout/collect/analyse.py, src/ytscout/dashboard/templates/findings.html.j2, tests/test_competitor_analysis.py
 **Milestone**: M2
 

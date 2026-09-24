@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 003, 021
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/scout/validate.py, tests/test_scout_validate.py, tests/fixtures/validate/
 **Milestone**: M4
 

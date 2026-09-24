@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 004
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/collect/discover.py, src/ytscout/text.py, tests/test_discover.py, tests/fixtures/discover/
 **Milestone**: M1
 

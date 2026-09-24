@@ -3,6 +3,7 @@
 **Type**: Active
 **Blocked by**: 005, 006, 008
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: data/ytscout.sqlite, data/decisions.json, config/scoring.yaml (discovery thresholds)
 **Milestone**: M1
 

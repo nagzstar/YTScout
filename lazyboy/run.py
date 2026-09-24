@@ -17,6 +17,10 @@ picked: they need a person.
 **Add dirs** in the header lists directories outside this repo the session may read; each
 becomes a --add-dir flag. The pipeline audit uses it to read top-five-animals-1 in place.
 
+**Model** in the header names the model and, optionally, the effort for that issue, e.g.
+`claude-opus-5-5 medium` or `claude-fable-5-1 high`. Missing → DEFAULT_MODEL/DEFAULT_EFFORT
+below. --model / --effort on the command line override every issue.
+
 Completion is verified, not trusted: the file must be in issues/closed/, HEAD must have
 advanced, and the worktree must be clean. A session that cannot finish gets one resumed
 retry, then the file is parked in issues/stuck/ with a note and the loop continues.
@@ -50,6 +54,8 @@ SETTINGS = ROOT / "lazyboy" / "settings.json"
 NUM = re.compile(r"^(\d{3})-.*\.md$")
 REF = re.compile(r"(\d{3})")
 NOTHING = ("none", "-", "—", "–", "n/a", "nothing", "nobody")
+DEFAULT_MODEL = "claude-opus-5-5"
+DEFAULT_EFFORT = "medium"
 
 
 # --------------------------------------------------------------------------
@@ -88,6 +94,16 @@ def add_dirs(text):
     return out
 
 
+def model_for(text, args=None):
+    """(model, effort) for an issue: command line first, then the **Model** header, then
+    the defaults. Effort may be blank, which means Claude Code's own setting."""
+    raw = field(text, "Model").strip()
+    tokens = [] if not raw or raw.lower() in NOTHING else raw.split()
+    model = (args and args.model) or (tokens[0] if tokens else DEFAULT_MODEL)
+    effort = (args and args.effort) or (tokens[1] if len(tokens) > 1 else DEFAULT_EFFORT)
+    return model, effort
+
+
 def numbers_in(directory):
     return {NUM.match(p.name).group(1) for p in directory.glob("*.md") if NUM.match(p.name)}
 
@@ -108,7 +124,7 @@ def sh(*args, check=True):
     return subprocess.run(args, cwd=ROOT, text=True, capture_output=True, check=check).stdout.strip()
 
 
-def run_claude(prompt, log, yolo, resume=None, model=None, extra_dirs=()):
+def run_claude(prompt, log, yolo, resume=None, model=None, effort=None, extra_dirs=()):
     cmd = [shutil.which("claude") or "claude", "-p", "--verbose", "--output-format", "stream-json",
            "--permission-prompts", "none"]
     if yolo:
@@ -121,6 +137,8 @@ def run_claude(prompt, log, yolo, resume=None, model=None, extra_dirs=()):
         cmd += ["--resume", resume]
     if model:
         cmd += ["--model", model]
+    if effort:
+        cmd += ["--effort", effort]
     cmd.append(prompt)
     result = {}
     with log.open("a", encoding="utf-8") as lf, subprocess.Popen(
@@ -252,8 +270,11 @@ def work(issue: Path, args):
     dirs = add_dirs(text)
     head = sh("git", "rev-parse", "HEAD")
     log = LOGS / f"{issue.name[:3]}.jsonl"
+    model, effort = model_for(text, args)
+    print(f"model={model} effort={effort or 'default'}", flush=True)
     started = time.time()
-    res = run_claude(build_prompt(issue), log, args.yolo, model=args.model, extra_dirs=dirs)
+    res = run_claude(build_prompt(issue), log, args.yolo, model=model, effort=effort,
+                     extra_dirs=dirs)
     moved, advanced, clean, pushed = verify(issue, head, args.push)
     ok = moved and advanced and clean and pushed
     record(issue.name, 1, ok, res, started)
@@ -273,7 +294,8 @@ def work(issue: Path, args):
             f"everything so the worktree is clean, append the `## Outcome` note, and "
             f"`git mv issues/{issue.name} issues/closed/`. Do not push. If you truly cannot "
             f"finish it, append a `## Lazyboy` section saying why, commit that, and stop.",
-            log, args.yolo, resume=res["session_id"], model=args.model, extra_dirs=dirs,
+            log, args.yolo, resume=res["session_id"], model=model, effort=effort,
+            extra_dirs=dirs,
         )
         moved, advanced, clean, pushed = verify(issue, head, args.push)
         ok = moved and advanced and clean and pushed
@@ -316,8 +338,10 @@ def dry_run(floor):
     if not rows:
         print("No AFK issues at or above the floor. Active issues wait for you.")
     for p, missing in rows:
+        model, effort = model_for(p.read_text(encoding='utf-8'))
         print(("WAITS  " if missing else "READY  ") + p.name
-              + (f"  <- {', '.join(missing)}" if missing else ""))
+              + (f"  <- {', '.join(missing)}" if missing else "")
+              + f"  [{model} {effort or ''}]".rstrip())
     active = [p.name for p in files_in(ISSUES, floor)
               if field(p.read_text(encoding="utf-8"), "Type").upper() == "ACTIVE"]
     if active:
@@ -359,7 +383,11 @@ def main():
     # --yolo drops the allowlist but not lazyboy/guard.py: PreToolUse hooks still run
     # under --dangerously-skip-permissions, so the guard's rules hold either way.
     ap.add_argument("--yolo", action="store_true")
-    ap.add_argument("--model")
+    ap.add_argument("--model", help="override every issue's **Model** header")
+    ap.add_argument("--effort", help="override every issue's effort (low/medium/high)")
+    ap.add_argument("--print-flags", action="store_true",
+                    help="print the --model/--effort flags for the next issue and exit; "
+                         "once.ps1 uses this so interactive runs pick the same model")
     args = ap.parse_args()
     only = parse_target(args.target)
     for d in (CLOSED, STUCK, LOGS):
@@ -369,13 +397,17 @@ def main():
         dry_run(args.floor)
         return
 
-    if args.print_prompt:
+    if args.print_prompt or args.print_flags:
         issue = next_issue(only, args.floor, include_active=args.include_active)
         if issue is None:
             what = "issue" if args.include_active else "AFK issue"
             sys.exit(f"lazyboy: no eligible {what} matching {only or 'anything'} "
                      f"(closed, blocked, or missing).")
-        print(build_prompt(issue))
+        if args.print_flags:
+            model, effort = model_for(issue.read_text(encoding='utf-8'), args)
+            print(f"--model {model}" + (f" --effort {effort}" if effort else ""))
+        else:
+            print(build_prompt(issue))
         return
 
     preflight(args)

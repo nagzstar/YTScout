@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 021, 022, 023
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: prompts/niche_step_tagging.md, schemas/niche_step_tagging.json, src/ytscout/scout/tag.py, src/ytscout/scout/score.py, src/ytscout/cli.py (score), tests/test_scout_score.py
 **Milestone**: M4
 

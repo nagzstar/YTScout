@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 007
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/dashboard/serve.py, src/ytscout/store/repo.py (decisions), templates (buttons + JS), data/decisions.json, tests/test_serve.py
 **Milestone**: M1
 

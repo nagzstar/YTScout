@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 008, 024
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/dashboard/templates/niches.html.j2, src/ytscout/dashboard/build.py, tests/test_dashboard.py
 **Milestone**: M4
 

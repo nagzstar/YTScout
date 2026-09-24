@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 027
 **Add dirs**: none
+**Model**: claude-fable-5-1 high
 **Covers**: src/ytscout/scout/sensitivity.py, docs/sensitivity.md, tests/test_sensitivity.py
 **Milestone**: M4
 

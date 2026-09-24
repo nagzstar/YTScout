@@ -13,5 +13,7 @@ Push-Location $repo
 try {
     $prompt = & $python "lazyboy\run.py" $Target --print-prompt --include-active | Out-String
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    claude --permission-mode acceptEdits --settings lazyboy\settings.json $prompt
+    $flags = (& $python "lazyboy\run.py" $Target --print-flags --include-active) -split ' '
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    claude --permission-mode acceptEdits --settings lazyboy\settings.json @flags $prompt
 } finally { Pop-Location }

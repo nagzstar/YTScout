@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 002
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/youtube/{__init__,quota,client,transport}.py, tests/test_quota.py, tests/test_client.py, tests/fixtures/
 **Milestone**: M0
 

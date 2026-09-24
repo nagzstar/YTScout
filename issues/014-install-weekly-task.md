@@ -3,6 +3,7 @@
 **Type**: Active
 **Blocked by**: 012, 013
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: Windows Task Scheduler, logs/
 **Milestone**: M1
 

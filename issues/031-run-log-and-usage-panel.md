@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 013, 017
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/cli.py (runs context manager), src/ytscout/claude_runner.py (usage capture), src/ytscout/dashboard/templates/runs.html.j2, migration, tests/test_runs_panel.py
 **Milestone**: M5
 

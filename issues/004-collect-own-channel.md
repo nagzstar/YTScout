@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 003
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/collect/{__init__,own}.py, src/ytscout/cli.py (collect), tests/test_collect_own.py, tests/fixtures/own_channel/
 **Milestone**: M0
 

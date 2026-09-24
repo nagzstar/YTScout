@@ -3,6 +3,7 @@
 **Type**: Active
 **Blocked by**: 005, 011
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: scripts/.secrets/token.json (YT_TOKEN_PATH), data/ytscout.sqlite (own_analytics, own_daily, own_traffic)
 **Milestone**: M1
 

@@ -15,8 +15,8 @@ each session starts with a small, fresh context instead of a long one.
 
 `lazyboy/afk.sh` and `lazyboy/once.sh` are the bash equivalents. Flags: `--limit N` caps
 the number of sessions, `--from NNN` raises the floor, `--push` pushes after each session,
-`--yolo` swaps the allowlist for `--dangerously-skip-permissions`, `--model` picks the
-model.
+`--yolo` swaps the allowlist for `--dangerously-skip-permissions`, `--model` and `--effort`
+override the per-issue `**Model**` header (default `claude-opus-5-5 medium`).
 
 The runner uses the same Claude subscription login as an interactive `claude` session.
 There is no API key anywhere in this project. It needs Claude Code ≥ 2.1.259 for

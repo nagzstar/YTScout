@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 022
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/scout/snowball.py, src/ytscout/text.py, tests/test_scout_snowball.py
 **Milestone**: M4
 

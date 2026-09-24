@@ -16,6 +16,7 @@ Start a new issue from `templates/issue.md`.
 **Type**: AFK
 **Blocked by**: 003, 004
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 ```
 
 - **Type** is `AFK` or `Active`. `AFK` means a session can finish it with no further input
@@ -29,6 +30,11 @@ Start a new issue from `templates/issue.md`.
   the leading three-digit number.
 - **Add dirs** lists directories outside the repo the session may read (each becomes a
   `--add-dir`). Almost always `none`; the pipeline audit is the exception.
+- **Model** is the model and effort the session runs with, e.g. `claude-opus-5-5 medium`
+  (the default when the line is missing) or `claude-fable-5-1 high` for issues that need
+  more judgement than typing: prompt design, the scoring model, the pipeline audit, the
+  sensitivity check. Both `afk.ps1` and `once.ps1` read it; `--model` / `--effort` on the
+  command line override it.
 - **Covers** and **Milestone** are a courtesy to whoever picks it up.
 
 `lazyboy/` reads `Type`, `Blocked by` and `Add dirs` to decide what to run and how

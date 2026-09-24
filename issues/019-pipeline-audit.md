@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 001
 **Add dirs**: C:\Users\nagaj\git\top-five-animals-1
+**Model**: claude-fable-5-1 high
 **Covers**: config/production_steps.yaml, config/pipeline_coverage.yaml, docs/pipeline-audit.md, src/ytscout/audit.py, src/ytscout/cli.py (audit), tests/test_audit.py
 **Milestone**: M3
 

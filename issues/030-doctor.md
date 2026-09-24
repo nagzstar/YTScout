@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 011, 016
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/doctor.py, src/ytscout/cli.py (doctor), tests/test_doctor.py
 **Milestone**: M5
 

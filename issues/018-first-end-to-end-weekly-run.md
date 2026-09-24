@@ -3,6 +3,7 @@
 **Type**: Active
 **Blocked by**: 012, 013, 017
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: scripts/run_weekly.ps1, dashboard/index.html, logs/, issues/ (new ones)
 **Milestone**: M2
 

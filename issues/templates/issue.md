@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: none
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: files, modules, prompts in play
 **Milestone**: M0
 

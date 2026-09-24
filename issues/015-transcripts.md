@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 010
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/transcripts.py, src/ytscout/collect/transcripts.py, tests/test_transcripts.py
 **Milestone**: M2
 

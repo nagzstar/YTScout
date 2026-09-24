@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 002
 **Add dirs**: none
+**Model**: claude-fable-5-1 high
 **Covers**: src/ytscout/scoring/{opportunity,money,effort,final,types}.py, config/scoring.yaml, tests/test_scoring.py
 **Milestone**: M4
 

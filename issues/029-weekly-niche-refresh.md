@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 013, 022
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/collect/niches.py, scripts/run_weekly.ps1, tests/test_collect_niches.py
 **Milestone**: M4
 

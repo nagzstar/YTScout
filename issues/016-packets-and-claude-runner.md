@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 015
 **Add dirs**: none
+**Model**: claude-fable-5-1 high
 **Covers**: src/ytscout/claude_runner.py, src/ytscout/packets.py, prompts/video_summary.md, schemas/video_summary.json, src/ytscout/cli.py (analyse, packet), tests/test_claude_runner.py, tests/test_packets.py, tests/fake_claude/
 **Milestone**: M2
 

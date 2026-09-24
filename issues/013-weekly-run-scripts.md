@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 007, 010
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: scripts/run_weekly.ps1, scripts/install_task.ps1, tests/test_scripts.py, README.md
 **Milestone**: M1
 

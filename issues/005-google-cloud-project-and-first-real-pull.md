@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 004
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: config/settings.yaml (gitignored), data/ytscout.sqlite (gitignored)
 **Milestone**: M0
 

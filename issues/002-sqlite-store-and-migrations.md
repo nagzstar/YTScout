@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 001
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/store/{__init__,db,repo}.py, src/ytscout/store/migrations/0001_initial.sql, tests/test_store.py
 **Milestone**: M0
 

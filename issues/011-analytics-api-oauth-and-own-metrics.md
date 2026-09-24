@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 004
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/youtube/analytics.py, src/ytscout/youtube/oauth.py, src/ytscout/collect/analytics.py, src/ytscout/cli.py (auth), migration 0003, tests/test_analytics.py
 **Milestone**: M1
 

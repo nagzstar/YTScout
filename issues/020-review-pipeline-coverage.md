@@ -3,6 +3,7 @@
 **Type**: Active
 **Blocked by**: 019
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: config/pipeline_coverage.yaml, config/production_steps.yaml
 **Milestone**: M3
 

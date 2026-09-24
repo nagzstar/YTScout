@@ -3,6 +3,7 @@
 **Type**: AFK
 **Blocked by**: 006, 007
 **Add dirs**: none
+**Model**: claude-opus-5-5 medium
 **Covers**: src/ytscout/collect/competitors.py, src/ytscout/scoring/metrics.py, src/ytscout/dashboard/templates/competitors.html.j2, tests/test_metrics.py, tests/test_collect_competitors.py
 **Milestone**: M1
 
