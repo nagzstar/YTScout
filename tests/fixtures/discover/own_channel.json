@@ -1,0 +1,22 @@
+{
+  "kind": "youtube#channelListResponse",
+  "etag": "etag-discover-own",
+  "items": [
+    {
+      "kind": "youtube#channel",
+      "id": "UCownchannel00000000001",
+      "statistics": {
+        "viewCount": "250000",
+        "subscriberCount": "1200",
+        "hiddenSubscriberCount": false,
+        "videoCount": "10"
+      },
+      "brandingSettings": {
+        "channel": {
+          "title": "Countdown Animal Kingdom (fixture)",
+          "keywords": "animals \"wild animals\" shorts"
+        }
+      }
+    }
+  ]
+}

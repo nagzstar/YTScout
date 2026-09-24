@@ -3,3 +3,16 @@
 
 # A video at or under this many seconds counts as a Short (YouTube allows Shorts up to 3 min).
 shorts_max_seconds: 180
+
+# Competitor discovery filter (006, DESIGN.md §4.3). A search hit's channel survives only if
+# it passes all three.
+discovery:
+  # Subscribers within [own / size_band_factor, own × size_band_factor] ...
+  size_band_factor: 10
+  # ... unless the own channel has fewer than small_own_subs; then [0, small_band_max].
+  small_own_subs: 1000
+  small_band_max: 10000
+  # Fraction of the channel's search hits at or under shorts_max_seconds.
+  shorts_share_min: 0.7
+  # Distinct query words that appear in the channel's hit titles.
+  keyword_overlap_min: 2

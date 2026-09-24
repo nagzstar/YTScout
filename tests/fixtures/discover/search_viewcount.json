@@ -1,0 +1,84 @@
+{
+  "kind": "youtube#searchListResponse",
+  "etag": "etag-search-viewcount",
+  "items": [
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "good1vid001"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood1",
+        "title": "Top 5 Deadliest Snakes in the Amazon",
+        "channelTitle": "UCgood1"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "good1vid002"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood1",
+        "title": "5 Most Dangerous Animals &#39;You&#39;ve Never Seen",
+        "channelTitle": "UCgood1"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "big1vid0001"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCbig1",
+        "title": "Top 5 Dangerous Animals Ranked",
+        "channelTitle": "UCbig1"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "long0vid001"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UClong",
+        "title": "The 5 Most Dangerous Animals: A Documentary",
+        "channelTitle": "UClong"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "rejectvid01"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCrejected",
+        "title": "Top 5 Venomous Snakes That Kill",
+        "channelTitle": "UCrejected"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "own0vid0001"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCownchannel00000000001",
+        "title": "Top 5 Most Dangerous Animals",
+        "channelTitle": "UCownchannel00000000001"
+      }
+    }
+  ]
+}

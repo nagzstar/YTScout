@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -33,3 +34,34 @@ def shorts_max_seconds(config: dict[str, Any]) -> int:
             f"shorts_max_seconds must be a positive integer in scoring.yaml, got {value!r}"
         )
     return value
+
+
+@dataclass(frozen=True)
+class DiscoveryConfig:
+    """``discovery:`` in scoring.yaml: the competitor similarity filter (006)."""
+
+    size_band_factor: float
+    small_own_subs: int
+    small_band_max: int
+    shorts_share_min: float
+    keyword_overlap_min: int
+
+
+def discovery_config(config: dict[str, Any]) -> DiscoveryConfig:
+    """The ``discovery:`` section, every key required and non-negative."""
+    section = config.get("discovery")
+    if not isinstance(section, dict):
+        raise ScoringConfigError("scoring.yaml has no `discovery:` mapping")
+    values: dict[str, Any] = {}
+    for f in fields(DiscoveryConfig):
+        value = section.get(f.name)
+        if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+            raise ScoringConfigError(
+                f"discovery.{f.name} must be a non-negative number in scoring.yaml, got {value!r}"
+            )
+        values[f.name] = int(value) if f.type == "int" else float(value)
+    if values["size_band_factor"] < 1 or values["shorts_share_min"] > 1:
+        raise ScoringConfigError(
+            "discovery.size_band_factor must be ≥ 1 and shorts_share_min ≤ 1 in scoring.yaml"
+        )
+    return DiscoveryConfig(**values)

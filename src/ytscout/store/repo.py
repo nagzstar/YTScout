@@ -80,6 +80,32 @@ def set_channel_status(conn: sqlite3.Connection, channel_id: str, status: str | 
         raise LookupError(f"no channel {channel_id!r}")
 
 
+def set_channel_discovery(conn: sqlite3.Connection, channel_id: str, discovery: dict) -> None:
+    """Replace a channel's ``discovery_json`` (why ``discover`` suggested it)."""
+    cur = conn.execute(
+        "UPDATE channels SET discovery_json = ? WHERE id = ?",
+        (json.dumps(discovery, ensure_ascii=False, sort_keys=True), channel_id),
+    )
+    if cur.rowcount == 0:
+        raise LookupError(f"no channel {channel_id!r}")
+
+
+def channel_ids_with_status(conn: sqlite3.Connection, status: str) -> set[str]:
+    """Ids of every channel whose review status is ``status``."""
+    rows = conn.execute("SELECT id FROM channels WHERE status = ?", (status,)).fetchall()
+    return {row[0] for row in rows}
+
+
+def recent_titles(conn: sqlite3.Connection, channel_id: str, limit: int) -> list[str]:
+    """The channel's newest ``limit`` video titles, newest first; untitled rows skipped."""
+    rows = conn.execute(
+        "SELECT title FROM videos WHERE channel_id = ? AND title IS NOT NULL"
+        " ORDER BY published_at DESC, id LIMIT ?",
+        (channel_id, limit),
+    ).fetchall()
+    return [row[0] for row in rows]
+
+
 def get_channel(conn: sqlite3.Connection, channel_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM channels WHERE id = ?", (channel_id,)).fetchone()
 

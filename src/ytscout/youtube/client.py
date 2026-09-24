@@ -110,9 +110,9 @@ class DataApi:
             params["videoDuration"] = video_duration
         return self._request("search", "list", **params)
 
-    def channels(self, ids: Sequence[str]) -> dict:
-        """``channels.list`` for up to 50 ids in one call."""
-        return self._request("channels", "list", part=_PARTS, id=_ids(ids), maxResults=50)
+    def channels(self, ids: Sequence[str], *, part: str = _PARTS) -> dict:
+        """``channels.list`` for up to 50 ids in one call. Every ``part`` costs the same unit."""
+        return self._request("channels", "list", part=part, id=_ids(ids), maxResults=50)
 
     def playlist_items(self, playlist_id: str, *, page_token: str | None = None) -> dict:
         """One page (up to 50 items) of ``playlistItems.list``."""

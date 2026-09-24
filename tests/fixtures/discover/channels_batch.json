@@ -1,0 +1,126 @@
+{
+  "kind": "youtube#channelListResponse",
+  "etag": "etag-discover-channels",
+  "items": [
+    {
+      "kind": "youtube#channel",
+      "id": "UCgood1",
+      "snippet": {
+        "title": "Good One Shorts",
+        "publishedAt": "2023-03-01T00:00:00Z",
+        "country": "US"
+      },
+      "statistics": {
+        "viewCount": "750000",
+        "subscriberCount": "5000",
+        "hiddenSubscriberCount": false,
+        "videoCount": "120"
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UUgood1"
+        }
+      }
+    },
+    {
+      "kind": "youtube#channel",
+      "id": "UCbig1",
+      "snippet": {
+        "title": "Mega Animal Network",
+        "publishedAt": "2023-03-01T00:00:00Z",
+        "country": "US"
+      },
+      "statistics": {
+        "viewCount": "300000000",
+        "subscriberCount": "2000000",
+        "hiddenSubscriberCount": false,
+        "videoCount": "120"
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UUbig1"
+        }
+      }
+    },
+    {
+      "kind": "youtube#channel",
+      "id": "UClong",
+      "snippet": {
+        "title": "Long Nature Docs",
+        "publishedAt": "2023-03-01T00:00:00Z",
+        "country": "US"
+      },
+      "statistics": {
+        "viewCount": "450000",
+        "subscriberCount": "3000",
+        "hiddenSubscriberCount": false,
+        "videoCount": "120"
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UUlong"
+        }
+      }
+    },
+    {
+      "kind": "youtube#channel",
+      "id": "UCrejected",
+      "snippet": {
+        "title": "Rejected Before",
+        "publishedAt": "2023-03-01T00:00:00Z",
+        "country": "US"
+      },
+      "statistics": {
+        "viewCount": "300000",
+        "subscriberCount": "2000",
+        "hiddenSubscriberCount": false,
+        "videoCount": "120"
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UUrejected"
+        }
+      }
+    },
+    {
+      "kind": "youtube#channel",
+      "id": "UCgood2",
+      "snippet": {
+        "title": "Good Two Shorts",
+        "publishedAt": "2023-03-01T00:00:00Z",
+        "country": "US"
+      },
+      "statistics": {
+        "viewCount": "120000",
+        "subscriberCount": "800",
+        "hiddenSubscriberCount": false,
+        "videoCount": "120"
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UUgood2"
+        }
+      }
+    },
+    {
+      "kind": "youtube#channel",
+      "id": "UCbig2",
+      "snippet": {
+        "title": "Big Backyard Beasts",
+        "publishedAt": "2023-03-01T00:00:00Z",
+        "country": "US"
+      },
+      "statistics": {
+        "viewCount": "7500000",
+        "subscriberCount": "50000",
+        "hiddenSubscriberCount": false,
+        "videoCount": "120"
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UUbig2"
+        }
+      }
+    }
+  ]
+}

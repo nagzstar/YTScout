@@ -1,0 +1,120 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "etag-discover-videos",
+  "items": [
+    {
+      "kind": "youtube#video",
+      "id": "good1vid001",
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood1",
+        "title": "Top 5 Deadliest Snakes in the Amazon",
+        "description": "",
+        "categoryId": "15"
+      },
+      "statistics": {
+        "viewCount": "90000",
+        "likeCount": "10",
+        "commentCount": "1"
+      },
+      "contentDetails": {
+        "duration": "PT45S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "good1vid002",
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood1",
+        "title": "5 Most Dangerous Animals You've Never Seen",
+        "description": "",
+        "categoryId": "15"
+      },
+      "statistics": {
+        "viewCount": "40000",
+        "likeCount": "10",
+        "commentCount": "1"
+      },
+      "contentDetails": {
+        "duration": "PT58S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "long0vid001",
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UClong",
+        "title": "The 5 Most Dangerous Animals: A Documentary",
+        "description": "",
+        "categoryId": "15"
+      },
+      "statistics": {
+        "viewCount": "7000",
+        "likeCount": "10",
+        "commentCount": "1"
+      },
+      "contentDetails": {
+        "duration": "PT10M20S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "long0vid002",
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UClong",
+        "title": "Venomous Snakes of the World (full episode)",
+        "description": "",
+        "categoryId": "15"
+      },
+      "statistics": {
+        "viewCount": "5000",
+        "likeCount": "10",
+        "commentCount": "1"
+      },
+      "contentDetails": {
+        "duration": "PT15M"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "good2vid001",
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood2",
+        "title": "Dangerous Animals of the World #shorts",
+        "description": "",
+        "categoryId": "15"
+      },
+      "statistics": {
+        "viewCount": "12000",
+        "likeCount": "10",
+        "commentCount": "1"
+      },
+      "contentDetails": {
+        "duration": "PT30S"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "id": "good2vid002",
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood2",
+        "title": "Deadliest Snakes Countdown",
+        "description": "",
+        "categoryId": "15"
+      },
+      "statistics": {
+        "viewCount": "8000",
+        "likeCount": "10",
+        "commentCount": "1"
+      },
+      "contentDetails": {
+        "duration": "PT3M"
+      }
+    }
+  ]
+}

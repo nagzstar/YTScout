@@ -1,0 +1,84 @@
+{
+  "kind": "youtube#searchListResponse",
+  "etag": "etag-search-date",
+  "items": [
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "good2vid001"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood2",
+        "title": "Dangerous Animals of the World #shorts",
+        "channelTitle": "UCgood2"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "good2vid002"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood2",
+        "title": "Deadliest Snakes Countdown",
+        "channelTitle": "UCgood2"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "big2vid0001"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCbig2",
+        "title": "5 Dangerous Animals in Your Backyard",
+        "channelTitle": "UCbig2"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "long0vid002"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UClong",
+        "title": "Venomous Snakes of the World (full episode)",
+        "channelTitle": "UClong"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "good1vid001"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCgood1",
+        "title": "Top 5 Deadliest Snakes in the Amazon",
+        "channelTitle": "UCgood1"
+      }
+    },
+    {
+      "kind": "youtube#searchResult",
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "rejectvid02"
+      },
+      "snippet": {
+        "publishedAt": "2026-06-01T10:00:00Z",
+        "channelId": "UCrejected",
+        "title": "Dangerous Animals You Should Avoid",
+        "channelTitle": "UCrejected"
+      }
+    }
+  ]
+}
