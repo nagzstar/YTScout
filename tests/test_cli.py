@@ -117,3 +117,11 @@ def test_doctor_never_prints_the_api_key(tmp_path: Path, monkeypatch: pytest.Mon
     assert result.returncode == EXIT_OK
     assert "YT_API_KEY: yes" in result.stdout
     assert "fake-key-value-for-test" not in result.stdout + result.stderr
+
+
+def test_collect_accepts_resume_as_a_no_op_flag() -> None:
+    """run_weekly.ps1 -Resume passes --resume to collectors; it must parse before 032."""
+    from ytscout.cli import build_parser
+
+    args = build_parser().parse_args(["collect", "--own", "--resume", "--dry-run"])
+    assert args.resume is True

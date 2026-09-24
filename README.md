@@ -73,11 +73,35 @@ consent (011/012; the token is stored at `YT_TOKEN_PATH`, gitignored, never comm
 ## Weekly run
 
 ```powershell
-.\scripts\install_task.ps1       # registers a Windows Task Scheduler job (Mon 03:00, wake to run)
-.\scripts\run_weekly.ps1         # or run it by hand
+.\scripts\run_weekly.ps1 -DryRun      # print the commands, run nothing
+.\scripts\run_weekly.ps1              # run the week by hand
+.\scripts\run_weekly.ps1 -Resume      # pass --resume to the collectors (issue 032; no-op until then)
+.\scripts\install_task.ps1            # register "YTScout Weekly" (Mon 03:00; -At "HH:mm" -Day <Day>)
+Get-ScheduledTask 'YTScout Weekly'    # inspect it
+Start-ScheduledTask 'YTScout Weekly'  # run it once now
 ```
 
-`run_weekly.ps1` does: `collect → packet → analyse (claude -p) → score → dashboard`, logging to `logs\`.
+`run_weekly.ps1` runs, in order, with `.venv\Scripts\python.exe -m ytscout`:
+
+1. `collect --own --max-units 8000`
+2. `collect --competitors --max-units 8000`
+3. `collect --analytics --max-units 8000` (no OAuth token, exit 4: a logged warning)
+4. `collect --transcripts --max-units 8000` (issue 015)
+5. `collect --niches --max-units 8000` (issue 029)
+6. `analyse --summaries`, then `analyse --competitors` (issues 016/017)
+7. `score --competitors`
+8. `dashboard`
+
+Each command and its exit code go to `logs\weekly-YYYYMMDD-HHMM.log`. Exit 2 (not implemented
+yet) is logged and the run continues. Exit 3 (quota exhausted) skips the remaining collectors,
+still scores and rebuilds the dashboard, and the script exits 3. Any other failure is logged, the
+run continues, and the script exits 1. The dashboard is always rebuilt last, so a partial week
+is still visible.
+
+The task wakes the PC (`-WakeToRun`), starts late if the PC was off (`-StartWhenAvailable`), and
+is killed after 3 hours. Monday 03:00 UK is before the Pacific-midnight quota reset (08:00 UK),
+so the run spends Sunday's Pacific quota; don't move it without reading the note at the top of
+`run_weekly.ps1`.
 
 ## Reviewing results
 

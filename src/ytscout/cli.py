@@ -162,6 +162,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_OWN_VIDEOS,
         help=f"--own: newest uploads to collect (default {DEFAULT_OWN_VIDEOS})",
     )
+    collect.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue an interrupted run from its checkpoint (issue 032; currently a no-op)",
+    )
     _add_quota_flags(collect)
     collect.set_defaults(func=cmd_collect)
 
