@@ -115,3 +115,57 @@ rebuilt with 10 undecided candidates; the review server is not running.
 Next: Nagz runs `.venv\Scripts\python.exe -m ytscout serve`, reviews the 10 at
 http://127.0.0.1:8765/ (≥ 6 more approvals reach the 8), notes dashboard complaints, then
 the Outcome closes the issue.
+
+## Outcome (closed 2026-09-24)
+
+Closed at **7 approved**, one short of the 8 target, at Nagz's decision: the filter now
+produces real competitors, and 010/017 can start on seven while the weekly refresh (014)
+surfaces more. The acceptance criteria are marked as they stand.
+
+- [ ] `channels` approved = **7** (target 8; accepted as-is).
+- [x] `data/decisions.json` has 47 lines, one per click (including the mis-click and the
+      four browser-retry duplicates noted in session 1; both stay in the log).
+- [x] `quota_ledger` 2026-09-24 = **3,686 units** for the whole issue: four real discovery
+      runs (1,211 + 1,211 + 607 + 607), the rest on the TLS failure and dashboard
+      rebuilds. The issue's grant was 2,500; the overrun is the two runs the filter
+      rewrite needed.
+- [x] Approved, rejected, and dashboard complaints below.
+
+### Approved
+
+| Channel | id |
+|---|---|
+| Woofy D. Luffy | `UCDlRCKlqeOSxvjhdzt839zw` |
+| coco scene | `UChItBtMVGAl-zBMcAyZoURg` |
+| LOWLIGHTS | `UCoImDDWjNbqX5SLNpFMVR8g` |
+| CritterClipzLOL | `UCSJPhVc02KDgAD4C1eM5lNQ` |
+| Beast tier | `UCAXr04ES-_yMS24N-H4MQQA` |
+| AstroFact | `UCjB3HIgZAWu9lqOEfCpv1Jw` |
+| Curious Bone | `UCjot6Wj8aZqpHDZGJ1-_12Q` |
+
+### Rejected (36)
+
+Nagz's summary: almost all were not competition — not English, not animals, or too small.
+By batch:
+
+- **Runs 1–2 (31 rejected)**: produced by the old 0.1×–10× size band before the subs floor,
+  viral-hit, topic-word and English screens existed. 19 were under 10k subs; the rest
+  were off-topic (general facts, gaming, NFL/property rankings) or non-English.
+- **Run 4 (5 rejected)**: Top 5 Animal voice overs, Rufus Goodboy, Tovo Ranks,
+  RankingvideosFunny, CT_seeking — passed every automatic screen but do not compete for
+  the same viewer (single-animal pet content, generic ranking formats, or facts channels
+  where animals are incidental).
+
+What this teaches the filter: the four screens added in this issue (subs ≥ 10k, one hit
+≥ 100k views, topic word, English) are the right gates; the residual rejections are
+editorial ("same animals, different viewer") and belong with a human, not a threshold.
+
+### Dashboard complaints → issues
+
+- No undo, decided rows vanish, no bulk decide → **035** (already filed).
+- `top 5 land` is a junk seed query (200 units a run for NFL and property rankings) →
+  **036**.
+- Hits column needs a tooltip saying "search hits"; `serve` must be restarted after code
+  changes (no reload) → **037**.
+- Emoji in channel titles render fine after the `errors="replace"` fix.
+- Every real run needs the TLS bundle → **033** (already filed).
