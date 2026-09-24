@@ -53,3 +53,12 @@ will not have that variable set, so it needs a permanent fix.
 On a failed request the ledger charges the unit before the call is made, so the failed
 run in 005 still cost 1 unit and left a `runs` row with status `error`. That is correct
 behaviour and needs no change.
+
+## Note from 012 (2026-09-24)
+
+There are two TLS stacks, not one. The Data API and Analytics API clients go through
+httplib2 (`HTTPLIB2_CA_CERTS`), but google-auth's token refresh and the consent flow go
+through `requests` (`REQUESTS_CA_BUNDLE`). The fix must cover both, or pass a shared
+`ca_certs`/`verify` into each. Issue 012 worked around it with `data/ca-bundle.pem`
+(certifi + Avast's `wscert.pem`) and both env vars set; that file is gitignored and is a fine
+permanent location for the combined bundle.
