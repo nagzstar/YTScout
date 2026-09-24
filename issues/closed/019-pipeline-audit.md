@@ -85,3 +85,60 @@ pipeline does, which it half-does, which are still Nagz.
 
 `DESIGN.md §6.4, §11 M3`. Be conservative: when unsure whether a step is automated or
 partial, choose `partial` with an override and explain. Nagz corrects the file in 020.
+
+## Outcome (closed 2026-09-24)
+
+Delivered: `config/production_steps.yaml` (the twelve §6.4 rows as data, under a
+top-level `steps:` list), `config/pipeline_coverage.yaml` (audited against pipeline
+commit `67b4c1d`), `docs/pipeline-audit.md`, `src/ytscout/audit.py`, a real
+`ytscout audit` command, and `tests/test_audit.py` (14 tests; 49 pass in all). ruff
+format and check are clean. `ytscout audit` exits 0 and prints the table; with a tmp
+copy of the coverage file missing a step it exits 1 naming the step (tested via
+subprocess).
+
+The numbers: 1.20 h manual per Short, 1.25 h per long-form deep dive, out of 3.25 h of
+non-disqualifying defaults. Nearly half is visual sourcing.
+
+Decisions, and why:
+
+- **One coverage value per step, not per format.** Simpler for 023 to consume. The only
+  format difference the model expresses is `shorts_hours` on thumbnail. The cost is that
+  long-form QA and the per-segment review in `assemble_long.py` are undercounted; the doc
+  says so and 020 is where Nagz decides whether that matters.
+- **Arithmetic** (`audit.effective_hours`): automated 0; manual = the format's base
+  hours; partial = override, capped at the base so a Short's thumbnail is 0 whatever
+  the coverage; `floor_hours` last (QA never below 0.1); a format not in
+  `formats_supported` is costed fully manual. Overrides above `default_hours` are
+  rejected at audit time. Disqualifying steps appear in the table with a `*` and are
+  excluded from both totals.
+- **Conservative calls.** Every "Claude drafts, the human approves" stage (research,
+  script, metadata, thumbnail) is `partial` with the approval time as the override, not
+  `automated`. `qa` is `manual` even though `check_script.py` and `check_render.py` exist:
+  they add gates without removing the human's end-to-end watch. `upload` is `partial`
+  because only `approve_week.py`, run by the owner at a terminal, ticks the consent box
+  `yt_upload.py` requires. `visuals_stock` is `partial` at 0.5 h because Storyblocks has
+  no API and forbids bots, so the owner downloads every clip; this is the number to
+  correct in 020.
+- **`formats_supported: [shorts, longform]`.** `assemble_long.py` is complete (renders
+  16:9 per segment, `--splice` joins), and research/script/package/produce all have deep
+  dive sections and templates. Compilations (pipeline issue 040) and tournaments (042)
+  are briefs only; long-form means "a deep dive" here.
+- **`audit` does not load `config/settings.yaml`**, only `find_repo_root`, so it runs on
+  this machine before issue 005 fills the settings in. It has no `--dry-run` because it
+  never touches the network; the CLI test proves it rejects the flag.
+- Evidence was gathered by two read-only sub-agents summarising `scripts/*.py` and the
+  skills, then every load-bearing citation was re-read by line before use.
+
+Checked: `git -C C:\Users\nagaj\git\top-five-animals-1 status --porcelain` shows the
+same single pre-existing ` M videos/INDEX.md` before and after; nothing was written
+there and `.env` / `scripts/.secrets/` were never opened.
+
+Unverified: nothing needed a human. The hour figures themselves are judgement, which is
+what 020 exists for.
+
+For the next issues: 020 edits `config/pipeline_coverage.yaml` by hand and re-runs
+`ytscout audit`; the loader rejects a partial entry without `manual_hours_override`, an
+override above the default, and an unknown format. 023 should import `load_steps`,
+`load_coverage` and `effective_hours` from `ytscout.audit` rather than re-reading the
+YAML; `Step.specific_footage_hours` is on the dataclass but the audit totals do not use
+it, that is the niche tagger's job. `docs/` now exists and is tracked.
