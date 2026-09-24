@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "niche_brainstorm",
+  "description": "Candidate format x topic niches proposed from a brief packet (prompts/niche_brainstorm.md). topic_category values are the fixed list in config/rpm_tiers.yaml; suspected_manual_steps are ids from config/production_steps.yaml, checked by scout propose rather than here so the steps file stays the one source of truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["niches"],
+  "properties": {
+    "niches": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "format",
+          "topic",
+          "label",
+          "topic_category",
+          "example_search_queries",
+          "why_ai_able",
+          "suspected_manual_steps",
+          "evergreen",
+          "faceless_ok"
+        ],
+        "properties": {
+          "format": { "type": "string", "enum": ["shorts", "longform"] },
+          "topic": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "minLength": 3,
+            "maxLength": 60
+          },
+          "label": { "type": "string", "minLength": 3, "maxLength": 80 },
+          "topic_category": {
+            "type": "string",
+            "enum": [
+              "finance_business",
+              "tech_software",
+              "education_explainer",
+              "health_fitness",
+              "true_crime_mystery",
+              "history_science",
+              "animals_nature",
+              "entertainment_pop",
+              "gaming",
+              "lifestyle_travel",
+              "diy_home",
+              "cars_vehicles",
+              "food_cooking",
+              "kids_family"
+            ]
+          },
+          "example_search_queries": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": { "type": "string", "minLength": 3, "maxLength": 100 }
+          },
+          "why_ai_able": { "type": "string", "maxLength": 300 },
+          "suspected_manual_steps": {
+            "type": "array",
+            "maxItems": 12,
+            "items": { "type": "string", "pattern": "^[a-z_]+$" }
+          },
+          "evergreen": { "type": "boolean" },
+          "faceless_ok": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

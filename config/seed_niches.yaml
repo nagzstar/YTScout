@@ -1,0 +1,85 @@
+# Seed niches: candidates entered by hand (DESIGN.md §5.2). Edit freely.
+#
+# `ytscout scout propose --from-seeds` loads these into the `niches` table as
+# status=proposed, source=seed, once each (a seed whose format x topic is already in the DB
+# is skipped). The first seed is the channel's own niche, so the scoring always has a
+# known reference row.
+#
+# Per niche:
+#   format                  shorts | longform
+#   topic                   a slug; format x topic is the niche's identity
+#   label                   what the dashboard shows
+#   topic_category          one of the ids in config/rpm_tiers.yaml
+#   example_search_queries  exactly 3; scout validate (022) spends search.list on them
+#   suspected_manual_steps  optional: step ids from config/production_steps.yaml that a human
+#                           would still have to do for this niche (the tagger in 024 confirms)
+#   why_ai_able             optional free text
+#   evergreen, faceless_ok  optional booleans
+
+niches:
+  - format: shorts
+    topic: top5-countdown-dangerous-animals
+    label: "Top 5 countdowns: dangerous animals"
+    topic_category: animals_nature
+    example_search_queries:
+      - top 5 most dangerous animals shorts
+      - deadliest animals countdown
+      - most venomous animals ranked
+    suspected_manual_steps: [visuals_stock, qa]
+    why_ai_able: >-
+      The channel's current niche: five ranked facts, stock wildlife footage, TTS
+      narration. Kept first so scoring has a known reference row.
+    evergreen: true
+    faceless_ok: true
+
+  - format: shorts
+    topic: top5-countdown-space-facts
+    label: "Top 5 countdowns: space and planets"
+    topic_category: history_science
+    example_search_queries:
+      - top 5 biggest planets shorts
+      - scariest things in space ranked
+      - space facts countdown
+    suspected_manual_steps: [visuals_stock, qa]
+    why_ai_able: Same countdown format; NASA/ESA imagery is public domain.
+    evergreen: true
+    faceless_ok: true
+
+  - format: longform
+    topic: one-animal-deep-dive
+    label: One-animal deep dives (8-12 min)
+    topic_category: animals_nature
+    example_search_queries:
+      - why the honey badger is fearless documentary
+      - orca hunting explained
+      - mantis shrimp facts full video
+    suspected_manual_steps: [visuals_stock, qa, thumbnail]
+    why_ai_able: The pipeline already renders 16:9 deep dives (assemble_long.py).
+    evergreen: true
+    faceless_ok: true
+
+  - format: longform
+    topic: history-mysteries-ranked
+    label: Unsolved history mysteries, ranked
+    topic_category: history_science
+    example_search_queries:
+      - unsolved mysteries of history ranked
+      - lost civilizations documentary
+      - greatest archaeological mysteries
+    suspected_manual_steps: [visuals_stock, qa, thumbnail]
+    why_ai_able: Story-driven script over public-domain images, maps and stock.
+    evergreen: true
+    faceless_ok: true
+
+  - format: shorts
+    topic: money-facts-countdown
+    label: "Top 5 countdowns: money and wealth facts"
+    topic_category: finance_business
+    example_search_queries:
+      - richest people in history ranked
+      - most expensive things ever sold shorts
+      - money facts countdown
+    suspected_manual_steps: [visuals_stock, qa]
+    why_ai_able: Countdown format with the highest-RPM category; stock and AI stills.
+    evergreen: true
+    faceless_ok: true

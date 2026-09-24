@@ -59,6 +59,7 @@ from ytscout.scoring import (
     shorts_max_seconds,
 )
 from ytscout.scoring.metrics import FORMATS
+from ytscout.scout import propose as scout_propose
 from ytscout.settings import (
     DEFAULT_DATA_DIR,
     DEFAULT_QUOTA_DAILY_CAP,
@@ -100,8 +101,15 @@ EXIT_NO_OAUTH_TOKEN = 4
 EXIT_CLAUDE_UNAVAILABLE = 5
 
 # command -> (help text, issue that delivers it). Order is the order shown in --help.
-STUBS: dict[str, tuple[str, str]] = {
-    "scout": ("the niche pipeline: propose / validate / tag / snowball / sensitivity", "021"),
+# Empty since 021: every top-level command is real. Kept so a future command can stub in.
+STUBS: dict[str, tuple[str, str]] = {}
+
+# scout subcommand -> (help text, issue that delivers it); these exit 2 until then.
+SCOUT_STUBS: dict[str, tuple[str, str]] = {
+    "validate": ("search the queries and sample the niche's channels", "022"),
+    "tag": ("tag each niche's required production steps", "024"),
+    "snowball": ("find adjacent niches from known channels", "026"),
+    "sensitivity": ("re-score five niches under threshold changes", "028"),
 }
 
 COMMANDS: tuple[str, ...] = (
@@ -114,6 +122,7 @@ COMMANDS: tuple[str, ...] = (
     "score",
     "packet",
     "analyse",
+    "scout",
     *STUBS,
     "audit",
 )
@@ -263,6 +272,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="list what would be summarised and the command shape; call nothing, write nothing",
     )
     analyse.set_defaults(func=cmd_analyse)
+
+    scout = sub.add_parser(
+        "scout", help="the niche pipeline: propose / validate / tag / snowball / sensitivity"
+    )
+    scout_sub = scout.add_subparsers(dest="scout_command", metavar="<subcommand>", required=True)
+    propose = scout_sub.add_parser(
+        "propose",
+        help="add candidate niches: the Claude brainstorm (claude -p) or --from-seeds (no API)",
+    )
+    propose.add_argument(
+        "--count",
+        type=_positive_int,
+        default=scout_propose.DEFAULT_COUNT,
+        help=f"niches to ask the brainstorm for (default {scout_propose.DEFAULT_COUNT})",
+    )
+    propose.add_argument(
+        "--from-seeds",
+        action="store_true",
+        help="load config/seed_niches.yaml instead of running the brainstorm",
+    )
+    propose.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show what would be added or asked; call nothing, write nothing",
+    )
+    propose.set_defaults(func=cmd_scout_propose)
+    for name, (help_text, issue) in SCOUT_STUBS.items():
+        stub = scout_sub.add_parser(name, help=f"{help_text} (issue {issue})")
+        stub.set_defaults(func=_make_stub(f"scout {name}", issue), stub=True)
 
     for name, (help_text, issue) in STUBS.items():
         stub = sub.add_parser(name, help=f"{help_text} (issue {issue})")
@@ -1349,6 +1387,137 @@ def _run_competitors(conn: sqlite3.Connection, root: Path, settings: Settings) -
     print(
         f"analyse --competitors: row {outcome.row_id} ok ({outcome.duration_s:.0f}s, "
         f"tokens {tokens}, {dropped} unknown id(s) dropped)"
+    )
+    return EXIT_OK
+
+
+def _print_seed_plan(conn: sqlite3.Connection, root: Path) -> None:
+    rpm = scout_propose.load_rpm_tiers(root / scout_propose.RPM_TIERS_RELPATH)
+    seeds = scout_propose.load_seeds(root / scout_propose.SEEDS_RELPATH)
+    known = scout_propose.step_ids(root)
+    print("dry run: seeds that would be added (nothing is written)")
+    would_add = 0
+    for seed in seeds:
+        if seed.topic_category not in rpm.categories:
+            state = f"skip: unknown category {seed.topic_category}"
+        elif any(s not in known for s in seed.suspected_manual_steps):
+            state = "skip: unknown step id"
+        elif repo.niche_exists(conn, seed.format, seed.topic):
+            state = "already in the DB"
+        else:
+            state = "add"
+            would_add += 1
+        print(f"  {seed.format:8} {seed.topic}: {state}")
+    print(f"seeds: {len(seeds)}; would add: {would_add}")
+
+
+def _print_brainstorm_plan(conn: sqlite3.Connection, root: Path, count: int) -> None:
+    prompt_path, schema_path = scout_propose.prompt_paths(root)
+    packet = scout_propose.brainstorm_packet(conn, repo_root=root, count=count)
+    size = len(json.dumps(packet, ensure_ascii=False).encode("utf-8"))
+    print("dry run: the brainstorm that would run (claude is not called, nothing is written)")
+    print(
+        f"asking for {count} niches; {len(packet['existing_niches'])} already in the DB; "
+        f"{len(packet['topic_categories'])} categories; {len(packet['production_steps'])} "
+        f"steps; packet {size:,} bytes"
+    )
+    reason = claude_runner.check_available()
+    print(f"claude: {'ok' if reason is None else reason}")
+    print(
+        f"prompt: {prompt_path.name} ({claude_runner.file_hash(prompt_path)}); "
+        f"schema: {schema_path.name} ({claude_runner.file_hash(schema_path)})"
+    )
+
+
+def cmd_scout_propose(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``scout propose``: seeds (no API, no Claude) or one ``claude -p`` brainstorm."""
+    root = find_repo_root()
+    needed = [root / scout_propose.RPM_TIERS_RELPATH, root / STEPS_RELPATH]
+    if args.from_seeds:
+        needed.append(root / scout_propose.SEEDS_RELPATH)
+    else:
+        needed.extend(scout_propose.prompt_paths(root))
+        needed.append(root / COVERAGE_RELPATH)
+    for path in needed:
+        if not path.is_file():
+            print(f"scout propose: missing {path}", file=sys.stderr)
+            return EXIT_ERROR
+
+    settings: Settings | None
+    try:
+        settings = load(repo_root=root)
+    except SettingsMissing as exc:
+        if not (args.dry_run or args.from_seeds):
+            print(f"scout propose: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"note: {exc.path} not found; using the default data directory")
+        settings = None
+    except SettingsError as exc:
+        print(f"scout propose: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+
+    try:
+        if args.dry_run:
+            copy = read_copy(db_path)
+            try:
+                if args.from_seeds:
+                    _print_seed_plan(copy, root)
+                else:
+                    _print_brainstorm_plan(copy, root, args.count)
+            finally:
+                copy.close()
+            return EXIT_OK
+
+        if args.from_seeds:
+            conn = connect(db_path)
+            try:
+                with recorded_run(conn, "scout_propose_seeds"):
+                    result = scout_propose.propose_from_seeds(conn, repo_root=root)
+            finally:
+                conn.close()
+            print(scout_propose.format_added(result))
+            print(scout_propose.format_summary(result))
+            return EXIT_OK
+
+        reason = claude_runner.check_available()
+        if reason is not None:
+            print(f"scout propose: claude unavailable: {reason}", file=sys.stderr)
+            return EXIT_CLAUDE_UNAVAILABLE
+        assert settings is not None
+        conn = connect(db_path)
+        try:
+            with recorded_run(conn, "scout_propose_llm") as run:
+                result = scout_propose.propose_from_brainstorm(
+                    conn,
+                    repo_root=root,
+                    packets_dir=packets.packets_dir(settings.data_dir),
+                    count=args.count,
+                    model=settings.claude.model,
+                )
+                if result.failure:
+                    run.status = "error"
+        finally:
+            conn.close()
+    except (scout_propose.ScoutConfigError, AuditError) as exc:
+        print(f"scout propose: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    packet_name = result.packet_path.name if result.packet_path else "-"
+    if result.failure:
+        print(f"scout propose: claude failed: {result.failure}", file=sys.stderr)
+        print(f"scout propose: nothing added (packet {packet_name})")
+        return EXIT_CLAUDE_UNAVAILABLE
+    print(scout_propose.format_added(result))
+    if result.unknown_categories:
+        print("unknown categories skipped: " + ", ".join(sorted(set(result.unknown_categories))))
+    if result.unknown_steps:
+        print("unknown step ids skipped: " + ", ".join(sorted(set(result.unknown_steps))))
+    usage = result.usage or {}
+    tokens = f"{usage.get('input_tokens', '?')} in / {usage.get('output_tokens', '?')} out"
+    print(
+        f"{scout_propose.format_summary(result)} ({result.duration_s:.0f}s, tokens {tokens}, "
+        f"packet {packet_name}, prompt {result.prompt_hash})"
     )
     return EXIT_OK
 

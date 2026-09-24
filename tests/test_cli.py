@@ -8,7 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from ytscout.cli import COMMANDS, EXIT_ERROR, EXIT_NOT_IMPLEMENTED, EXIT_OK, STUBS, main
+from ytscout.cli import (
+    COMMANDS,
+    EXIT_ERROR,
+    EXIT_NOT_IMPLEMENTED,
+    EXIT_OK,
+    SCOUT_STUBS,
+    STUBS,
+    main,
+)
 
 EXPECTED = {
     "doctor",
@@ -54,20 +62,33 @@ def test_no_command_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None
     assert "usage" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("name", sorted(STUBS))
-def test_each_stub_exits_2_with_not_implemented_line(
+def test_no_top_level_stubs_are_left() -> None:
+    """Every top-level command is real since 021; only scout subcommands still stub."""
+    assert STUBS == {}
+    assert set(SCOUT_STUBS) == {"validate", "tag", "snowball", "sensitivity"}
+
+
+@pytest.mark.parametrize("name", sorted(SCOUT_STUBS))
+def test_each_scout_stub_exits_2_with_not_implemented_line(
     name: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code = main([name])
+    code = main(["scout", name])
     assert code == EXIT_NOT_IMPLEMENTED
     err = capsys.readouterr().err
-    assert err.startswith(f"ytscout {name}: not implemented yet (issue ")
+    assert err.startswith(f"ytscout scout {name}: not implemented yet (issue ")
 
 
-def test_stub_swallows_future_flags(capsys: pytest.CaptureFixture[str]) -> None:
-    """run_weekly.ps1 will call e.g. `scout --max-units 500`; that must still be a 2."""
-    assert main(["scout", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
+def test_scout_stub_swallows_future_flags(capsys: pytest.CaptureFixture[str]) -> None:
+    """run_weekly.ps1 will call e.g. `scout validate --max-units 500`; still a 2."""
+    assert main(["scout", "validate", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
     assert "not implemented" in capsys.readouterr().err
+
+
+def test_scout_without_a_subcommand_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main(["scout"])
+    assert excinfo.value.code == 2
+    assert "usage" in capsys.readouterr().err
 
 
 def test_doctor_rejects_unknown_flags(capsys: pytest.CaptureFixture[str]) -> None:

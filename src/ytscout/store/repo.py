@@ -642,3 +642,69 @@ def latest_competitor_analysis(conn: sqlite3.Connection) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM competitor_analyses ORDER BY run_at DESC, id DESC LIMIT 1"
     ).fetchone()
+
+
+# --- niches (021) ---------------------------------------------------------------------------
+
+NICHE_FORMATS = ("shorts", "longform")
+NICHE_SOURCES = ("llm", "snowball", "seed")
+NICHE_STATUS_PROPOSED = "proposed"
+
+
+def niche_exists(conn: sqlite3.Connection, fmt: str, topic: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM niches WHERE format = ? AND topic = ? LIMIT 1", (fmt, topic)
+    ).fetchone()
+    return row is not None
+
+
+def insert_niche(
+    conn: sqlite3.Connection,
+    *,
+    fmt: str,
+    topic: str,
+    topic_category: str,
+    label: str,
+    source: str,
+    queries: Sequence[str],
+    required_steps: Sequence[str],
+    meta: dict | None = None,
+    status: str = NICHE_STATUS_PROPOSED,
+    created_at: str | datetime | None = None,
+) -> int:
+    """Insert one ``niches`` row and return its id.
+
+    Raises ``ValueError`` for an unknown format or source and ``sqlite3.IntegrityError``
+    when ``(format, topic)`` already exists; callers de-duplicate with ``niche_exists``.
+    """
+    if fmt not in NICHE_FORMATS:
+        raise ValueError(f"format must be one of {NICHE_FORMATS}, got {fmt!r}")
+    if source not in NICHE_SOURCES:
+        raise ValueError(f"source must be one of {NICHE_SOURCES}, got {source!r}")
+    cur = conn.execute(
+        "INSERT INTO niches (format, topic, topic_category, label, status, source, created_at,"
+        " queries_json, required_steps_json, meta_json)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            fmt,
+            topic,
+            topic_category,
+            label,
+            status,
+            source,
+            _ts(created_at) or now_utc(),
+            json.dumps(list(queries), ensure_ascii=False),
+            json.dumps(list(required_steps), ensure_ascii=False),
+            None if meta is None else json.dumps(meta, ensure_ascii=False, sort_keys=True),
+        ),
+    )
+    return int(cur.lastrowid or 0)
+
+
+def list_niches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every niche, oldest first."""
+    return conn.execute("SELECT * FROM niches ORDER BY id").fetchall()
+
+
+def get_niche(conn: sqlite3.Connection, niche_id: int) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM niches WHERE id = ?", (niche_id,)).fetchone()

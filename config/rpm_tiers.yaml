@@ -1,0 +1,323 @@
+# RPM tiers: USD revenue per 1,000 views, per topic category x format (DESIGN.md §6.3).
+#
+# The fuzziest input in the project (§13), so every row says where its numbers came from.
+# `mid` is what the scoring uses; `low`/`high` bound the p25-p75 band the dashboard shows.
+# Values are for a mostly US/UK/tier-1 audience with a long-form ad mix; the scorer
+# multiplies by a calibration factor from the own channel's real Shorts RPM, so what
+# matters most here is the *ratio* between rows, not the absolute level.
+#
+# Category ids are the fixed list in src/ytscout/scout/propose.py (TOPIC_CATEGORIES) and
+# the enum in schemas/niche_brainstorm.json; tests check the three agree. Per row:
+#   usd_rpm:       {low, mid, high}, low <= mid <= high
+#   source:        the URL the range was read from, or `estimate` (see notes for the
+#                  neighbour it was derived from)
+#   last_reviewed: YYYY-MM; revisit quarterly
+#   notes:         the quoted figure and how low/mid/high were set from it
+#
+# Sources read 2026-09-24 (all report 2025-26 figures):
+#   [FN]  https://fluxnote.io/guides/youtube-rpm-by-niche-usa-2026            (Jun 2026)
+#   [YMC] https://ytmoneycalculator.com/blog/average-youtube-rpm/             (Mar 2026)
+#   [MF]  https://miraflow.ai/blog/youtube-cpm-rates-by-niche-2026-how-much-youtubers-earn (Apr 2026)
+#   [MFS] https://miraflow.ai/blog/youtube-shorts-rpm-2026-real-ranges-by-niche (Feb 2026)
+#   [AIR] https://air.io/en/monetization/what-rpm-can-you-expect-from-shorts-in-2026 (Jan 2026)
+#   [TC]  https://fluxnote.io/guides/youtube-shorts-rpm-true-crime-niche       (Jun 2026)
+#   [NAT] https://fluxnote.io/guides/how-much-nature-channel-makes             (Mar 2026)
+#
+# Shorts: no source breaks Shorts RPM down by niche with numbers. What is published is an
+# overall band ($0.03-$0.10 per 1,000 [MF, MFS, YMC]; US average $0.328 in 2025 [AIR]),
+# a finance exception ($0.15-$0.30 [YMC]), a true-crime figure ($0.03-$0.12 [TC]), and
+# the tier description in [MFS]: high advertiser demand (finance, business, B2B, career)
+# at the upper end, mid demand (tech, education, productivity) mid-range, low demand
+# (memes, repost entertainment, generic clips) at the lower end. Shorts rows below are
+# therefore `estimate` unless a specific figure exists: they take the [MFS] tier for the
+# category and the [YMC]/[MF] band, scaled so the category order matches long-form.
+
+categories:
+  finance_business:
+    label: Finance & business
+    description: >-
+      Personal finance, investing, money habits, business and entrepreneurship, careers,
+      side income, economics explainers.
+    longform:
+      usd_rpm: {low: 12, mid: 22, high: 35}
+      source: https://fluxnote.io/guides/youtube-rpm-by-niche-usa-2026
+      last_reviewed: 2026-09
+      notes: >-
+        [FN] "Personal Finance & Investing $20-$40+", "Business & Entrepreneurship
+        $15-$30"; [MF] "Finance, Investing & Cryptocurrency $12-$35"; [YMC] "Finance /
+        Investing $8-$20". low = [MF] floor, high = [MF] ceiling, mid between the finance
+        and business rows.
+    shorts:
+      usd_rpm: {low: 0.10, mid: 0.20, high: 0.30}
+      source: https://ytmoneycalculator.com/blog/average-youtube-rpm/
+      last_reviewed: 2026-09
+      notes: >-
+        [YMC] "high-value niches like finance Shorts can reach $0.15-$0.30 RPM"; [MFS]
+        puts finance/business at the upper end. low widened to 0.10 for non-US traffic.
+
+  tech_software:
+    label: Tech & software
+    description: >-
+      Consumer tech, software and apps, AI tools, gadgets, how a technology works,
+      programming explainers.
+    longform:
+      usd_rpm: {low: 8, mid: 14, high: 24}
+      source: https://fluxnote.io/guides/youtube-rpm-by-niche-usa-2026
+      last_reviewed: 2026-09
+      notes: >-
+        [FN] "Technology & Software $15-$25"; [MF] "Technology & Software (B2B) $8-$24";
+        [YMC] "Tech Reviews $4-$8". low/high from [MF]; mid pulled under [FN]'s floor
+        because consumer tech ([YMC]) earns far less than B2B software.
+    shorts:
+      usd_rpm: {low: 0.05, mid: 0.10, high: 0.18}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. [MFS] puts general tech "often mid-range" of $0.03-$0.20; set
+        between the finance Shorts row and the general band's middle.
+
+  education_explainer:
+    label: Education & explainers
+    description: >-
+      How-to and tutorials, study topics, "explained" videos, general knowledge, top-N
+      educational lists that are not about a more specific category below.
+    longform:
+      usd_rpm: {low: 5, mid: 9, high: 15}
+      source: https://fluxnote.io/guides/youtube-rpm-by-niche-usa-2026
+      last_reviewed: 2026-09
+      notes: >-
+        [FN] "Education & How-To $8-$15"; [MF] "Education & Online Learning $5-$15";
+        [YMC] "Education / Tutorials $2.75-$5.50". low/high from [MF]; mid a little
+        under [FN]'s midpoint to weigh [YMC].
+    shorts:
+      usd_rpm: {low: 0.04, mid: 0.08, high: 0.15}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. [MFS] puts education "often mid-range"; set at the middle of the
+        $0.03-$0.20 band, a step under tech.
+
+  health_fitness:
+    label: Health & fitness
+    description: >-
+      Fitness, nutrition, sleep, wellness, medical explainers, body facts, habits.
+    longform:
+      usd_rpm: {low: 5, mid: 9, high: 16}
+      source: https://miraflow.ai/blog/youtube-cpm-rates-by-niche-2026-how-much-youtubers-earn
+      last_reviewed: 2026-09
+      notes: >-
+        [MF] "Health, Fitness & Wellness $5-$16"; [FN] "Health & Fitness $8-$15"; [YMC]
+        "Health / Fitness $2.20-$4.40". low/high from [MF]; mid under [FN]'s midpoint to
+        weigh [YMC].
+    shorts:
+      usd_rpm: {low: 0.04, mid: 0.08, high: 0.15}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. Long-form sits level with education, so the Shorts row copies
+        education_explainer's mid.
+
+  true_crime_mystery:
+    label: True crime & mystery
+    description: >-
+      True crime, unsolved cases, disappearances, heists, scams, conspiracies and
+      mysteries told as stories.
+    longform:
+      usd_rpm: {low: 4, mid: 7, high: 10}
+      source: https://fluxnote.io/guides/youtube-shorts-rpm-true-crime-niche
+      last_reviewed: 2026-09
+      notes: >-
+        [TC] "$4-$10 for long-form true crime content". mid at the midpoint.
+    shorts:
+      usd_rpm: {low: 0.03, mid: 0.07, high: 0.12}
+      source: https://fluxnote.io/guides/youtube-shorts-rpm-true-crime-niche
+      last_reviewed: 2026-09
+      notes: >-
+        [TC] "True crime YouTube Shorts typically earn an RPM of $0.03 to $0.12 due to
+        sensitive content advertiser controls". mid a little under the midpoint.
+
+  history_science:
+    label: History & science
+    description: >-
+      History, archaeology, space, physics, geology, engineering marvels, "what if" and
+      science-adjacent nature/ecology.
+    longform:
+      usd_rpm: {low: 4, mid: 8, high: 12}
+      source: https://fluxnote.io/guides/how-much-nature-channel-makes
+      last_reviewed: 2026-09
+      notes: >-
+        [NAT] "Channels combining nature with science or ecology commentary earn slightly
+        higher RPMs ($7-$10) due to STEM advertiser overlap"; [FN]/[MF] education rows
+        ($5-$15) as the ceiling for STEM explainers. No history-specific figure found;
+        treated as education-adjacent, a step under education.
+    shorts:
+      usd_rpm: {low: 0.03, mid: 0.07, high: 0.12}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. Long-form sits between education and animals_nature; the Shorts
+        row does the same (education 0.08, animals 0.05).
+
+  animals_nature:
+    label: Animals & nature
+    description: >-
+      Wildlife, pets, animal facts and rankings, ocean life, nature documentaries and
+      countdowns. The own channel's category.
+    longform:
+      usd_rpm: {low: 2.5, mid: 5, high: 9}
+      source: https://fluxnote.io/guides/how-much-nature-channel-makes
+      last_reviewed: 2026-09
+      notes: >-
+        [NAT] "Nature channels earn $4-$9 RPM", "average RPM $5"; [MF] "Pets & Animals
+        $1-$4.50". high from [NAT], low between the two, mid = [NAT]'s stated average.
+    shorts:
+      usd_rpm: {low: 0.03, mid: 0.05, high: 0.10}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. Set at the general Shorts band ($0.03-$0.10 [MF, MFS]) with mid
+        a little under its midpoint, matching a low-mid long-form category. This is the
+        row the own channel's real Shorts RPM calibrates against (§6.3), so its
+        absolute level matters least.
+
+  entertainment_pop:
+    label: Entertainment & pop culture
+    description: >-
+      Movies, TV, celebrities, music trivia, memes, reactions, commentary, viral lists,
+      general "top 10" entertainment.
+    longform:
+      usd_rpm: {low: 1.5, mid: 3, high: 6}
+      source: https://miraflow.ai/blog/youtube-cpm-rates-by-niche-2026-how-much-youtubers-earn
+      last_reviewed: 2026-09
+      notes: >-
+        [MF] "Entertainment, Comedy & Commentary $1.50-$7"; [FN] "Entertainment & Comedy
+        $2-$5"; [YMC] "Entertainment $0.83-$2.20". low from [MF], high a little under
+        [MF]'s ceiling, mid near [FN]'s midpoint.
+    shorts:
+      usd_rpm: {low: 0.02, mid: 0.04, high: 0.08}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No exact figure. [MFS] puts "memes, repost-style entertainment, generic clips" at
+        the lower end of the $0.03-$0.10 band; set at the bottom of it.
+
+  gaming:
+    label: Gaming
+    description: >-
+      Video games: lore, rankings, tips, news, esports, retro. Usually needs gameplay
+      footage.
+    longform:
+      usd_rpm: {low: 1.5, mid: 3, high: 5.5}
+      source: https://miraflow.ai/blog/youtube-cpm-rates-by-niche-2026-how-much-youtubers-earn
+      last_reviewed: 2026-09
+      notes: >-
+        [MF] "Gaming $1.50-$5.50"; [FN] "Gaming $2-$5"; [YMC] "Gaming $1-$3". low/high
+        from [MF]; mid a little under the midpoint to weigh [YMC].
+    shorts:
+      usd_rpm: {low: 0.02, mid: 0.04, high: 0.08}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No exact figure. [MFS]: "Finance Shorts earn 10x more per view than gaming
+        Shorts", so a tenth of the finance Shorts row, which lands on the entertainment
+        row; copied from it.
+
+  lifestyle_travel:
+    label: Lifestyle & travel
+    description: >-
+      Travel destinations and rankings, places to live, culture, minimalism,
+      productivity, relationships, self-improvement, vlog-style topics.
+    longform:
+      usd_rpm: {low: 3, mid: 6, high: 11}
+      source: https://fluxnote.io/guides/youtube-rpm-by-niche-usa-2026
+      last_reviewed: 2026-09
+      notes: >-
+        [FN] "Travel $6-$12", "Vlogs & Lifestyle $3-$6"; [MF] "Travel $3-$11",
+        "Lifestyle & Vlogging $1.50-$5.50"; [YMC] "Lifestyle / Vlogs $1.10-$2.75".
+        low/high from [MF] travel; mid at [FN] travel's floor because lifestyle drags it
+        down.
+    shorts:
+      usd_rpm: {low: 0.03, mid: 0.06, high: 0.12}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. Long-form sits between animals_nature and education; the Shorts
+        row does the same.
+
+  diy_home:
+    label: DIY & home
+    description: >-
+      Home improvement, repairs, tools, gardening, cleaning, organisation, interior
+      design, woodworking.
+    longform:
+      usd_rpm: {low: 6, mid: 10, high: 14}
+      source: https://fluxnote.io/guides/youtube-rpm-by-niche-usa-2026
+      last_reviewed: 2026-09
+      notes: >-
+        [FN] "DIY & Home Improvement $8-$14". Only one source; low widened to 6 for it.
+    shorts:
+      usd_rpm: {low: 0.04, mid: 0.08, high: 0.15}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. Long-form sits level with education and health (home-goods and
+        tool advertisers); the Shorts row copies education_explainer's mid.
+
+  cars_vehicles:
+    label: Cars & vehicles
+    description: >-
+      Cars, motorbikes, EVs, aviation, trains, ships, engines, vehicle rankings and
+      history.
+    longform:
+      usd_rpm: {low: 4, mid: 8, high: 14}
+      source: https://miraflow.ai/blog/youtube-cpm-rates-by-niche-2026-how-much-youtubers-earn
+      last_reviewed: 2026-09
+      notes: >-
+        [MF] "Automotive $4-$14". Only one source; mid a little under the midpoint.
+    shorts:
+      usd_rpm: {low: 0.03, mid: 0.07, high: 0.12}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. Long-form sits level with history_science; the Shorts row copies
+        its mid.
+
+  food_cooking:
+    label: Food & cooking
+    description: >-
+      Recipes, food science, world cuisines, food rankings, restaurant and food history.
+    longform:
+      usd_rpm: {low: 2.5, mid: 6, high: 10}
+      source: https://fluxnote.io/guides/youtube-rpm-by-niche-usa-2026
+      last_reviewed: 2026-09
+      notes: >-
+        [FN] "Food & Cooking $6-$12"; [MF] "Food & Cooking $2.50-$8". low from [MF],
+        high between the two ceilings, mid at [FN]'s floor.
+    shorts:
+      usd_rpm: {low: 0.03, mid: 0.06, high: 0.12}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. Long-form sits level with lifestyle_travel; the Shorts row
+        copies its mid.
+
+  kids_family:
+    label: Kids & family
+    description: >-
+      Content for children or families: nursery rhymes, learning for kids, toys, family
+      activities. "Made for kids" videos lose personalised ads and comments.
+    longform:
+      usd_rpm: {low: 0.5, mid: 1.25, high: 2}
+      source: https://fluxnote.io/guides/youtube-rpm-by-niche-usa-2026
+      last_reviewed: 2026-09
+      notes: >-
+        [FN] "Made for Kids earn significantly lower RPM - typically $0.50-$2 RPM"
+        (COPPA: no personalised ads). mid at the midpoint.
+    shorts:
+      usd_rpm: {low: 0.01, mid: 0.02, high: 0.04}
+      source: estimate
+      last_reviewed: 2026-09
+      notes: >-
+        No niche figure. Made-for-kids long-form is roughly half of entertainment's; the
+        Shorts row halves entertainment_pop's, which lands on [YMC]'s
+        "General/Gaming/Entertainment $0.01-$0.04" band.
