@@ -52,13 +52,40 @@ money.
 
 ## Acceptance criteria
 
-- [ ] `pytest -q` passes, including `tests/test_scout_propose.py`.
-- [ ] `.venv\Scripts\python.exe -m ytscout scout propose --from-seeds` adds 5 rows the first
+- [x] `pytest -q` passes, including `tests/test_scout_propose.py`.
+- [x] `.venv\Scripts\python.exe -m ytscout scout propose --from-seeds` adds 5 rows the first
       time and 0 the second.
-- [ ] `config/rpm_tiers.yaml` has 14 categories × 2 formats, every row with a `source`.
-- [ ] `ruff check .` and `ruff format --check .` clean.
+- [x] `config/rpm_tiers.yaml` has 14 categories × 2 formats, every row with a `source`.
+- [x] `ruff check .` and `ruff format --check .` clean.
 
 ## Notes
 
 `DESIGN.md §5.2, §6.3`. The RPM table is the fuzziest input in the project — `DESIGN.md
 §13` says so. Do not overthink the numbers; do make every one traceable.
+
+## Outcome (closed 2026-09-24)
+
+Delivered in commits 8861873 and db5200f (plus this close-out).
+
+- `config/rpm_tiers.yaml`: 14 categories × `{shorts, longform}`, every row with `usd_rpm`
+  `{low, mid, high}`, `source` and `last_reviewed: 2026-09`. **Flag**: 12 of the 14 shorts
+  rows are `source: estimate` (all but `finance_business` and `true_crime_mystery`). Shorts
+  RPM is rarely reported per category, so those rows take the mid of their nearest
+  sourced neighbour. Revisit when 028 (sensitivity) says the ranking depends on them.
+- `config/seed_niches.yaml`: 5 seeds. `scout propose --from-seeds` added 5 rows on the first
+  real run and 0 on the second (5 duplicates skipped), as required.
+- `prompts/niche_brainstorm.md` + `schemas/niche_brainstorm.json`, `src/ytscout/scout/propose.py`,
+  `scout propose [--count N] [--from-seeds] [--dry-run]`, migration 0005 (`niches.meta_json`
+  carrying why_ai_able, evergreen, faceless_ok, required steps, and prompt/schema hashes
+  plus packet path for LLM rows).
+- **Real calls spent: 1 of 3** `claude -p` brainstorm runs. 30 candidates asked, 30 added,
+  0 duplicates, 0 unknown categories, 0 unknown step ids, 121 s, packet
+  `data/packets/2026-09-24-niche_brainstorm-1.json`, prompt hash `c72182060a35`, schema
+  hash `d35b4b4911f8`. The DB now holds 35 proposed niches (5 seed, 30 llm).
+- Tests: `tests/test_scout_propose.py`; suite 329 passed; `ruff check` and `ruff format
+  --check` clean. `tests/test_store.py` migration list bumped to five.
+
+Found along the way, fixed outside this issue's scope in commit 8861873: the fake-`claude`
+fixture built a new byte-unique `claude.exe` per test, and Avast CyberCapture held each one
+for cloud analysis. That is what killed the first AFK session on this issue mid-run. The
+fixture now builds one deterministic exe into `tests/fake_claude/build/` (gitignored).
