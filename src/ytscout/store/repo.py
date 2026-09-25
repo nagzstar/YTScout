@@ -11,6 +11,7 @@ import json
 import sqlite3
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from typing import Any
 
 from ytscout.store.db import now_utc, to_utc_iso
 
@@ -527,9 +528,11 @@ def finish_run(
 
 # --- decisions ----------------------------------------------------------------------------
 
-# What a person may decide, per target kind (008). Channel decisions are the channel status.
+# What a person may decide, per target kind (008). Channel decisions are the channel status;
+# `undecided` (035) clears it, so a mis-click goes back to Candidates through the audit log.
+UNDECIDED = "undecided"
 DECISIONS: dict[str, tuple[str, ...]] = {
-    "channel": CHANNEL_STATUSES,
+    "channel": (*CHANNEL_STATUSES, UNDECIDED),
     "niche": ("track", "shelve"),
 }
 
@@ -543,10 +546,54 @@ def set_niche_status(conn: sqlite3.Connection, niche_id: int, status: str | None
         raise LookupError(f"no niche {niche_id!r}")
 
 
+_READ_ONLY_ACTIONS = frozenset(
+    {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION}
+)
+
+
+def _read_only(action: int, *_args: object) -> int:
+    return sqlite3.SQLITE_OK if action in _READ_ONLY_ACTIONS else sqlite3.SQLITE_DENY
+
+
+def competitors_to_decide(
+    conn: sqlite3.Connection, where: str | None = None, ids: Sequence[str] = ()
+) -> list[dict[str, Any]]:
+    """Competitor rows for ``ytscout decide`` (035): ``id, title, status, subs``.
+
+    ``where`` is a SQL expression over those four columns (``subs`` is the latest
+    snapshot's), typed by Nagz; it runs under an authorizer that allows reads only, so it
+    can filter but never write. ``ids`` picks channels by id instead, in the given order.
+    Raises ``sqlite3.Error`` for a bad expression.
+    """
+    inner = (
+        "SELECT c.id, c.title, c.status, (SELECT s.subs FROM channel_snapshots s"
+        " WHERE s.channel_id = c.id ORDER BY s.captured_at DESC, s.id DESC LIMIT 1) AS subs"
+        " FROM channels c WHERE c.role = 'competitor'"
+    )
+    if where is not None:
+        sql = f"SELECT id, title, status, subs FROM ({inner}) WHERE ({where}) ORDER BY title, id"
+        conn.set_authorizer(_read_only)
+        try:
+            return [dict(r) for r in conn.execute(sql).fetchall()]
+        finally:
+            conn.set_authorizer(None)
+    found = {
+        r["id"]: dict(r)
+        for r in conn.execute(
+            f"SELECT id, title, status, subs FROM ({inner})"
+            f" WHERE id IN ({', '.join('?' for _ in ids)})",
+            tuple(ids),
+        ).fetchall()
+    }
+    return [found[i] for i in dict.fromkeys(ids) if i in found]
+
+
 def record_decision(
     conn: sqlite3.Connection, kind: str, target_id: str, decision: str, decided_at: str
 ) -> None:
     """Insert a ``decisions`` row and set the target's status to ``decision``.
+
+    ``undecided`` sets a channel's status back to NULL (a candidate again).
 
     Raises ``ValueError`` for an unknown kind or decision (or a non-integer niche id) and
     ``LookupError`` when the target does not exist; the caller rolls back.
@@ -556,7 +603,7 @@ def record_decision(
     if decision not in DECISIONS[kind]:
         raise ValueError(f"decision for {kind} must be one of {DECISIONS[kind]}, got {decision!r}")
     if kind == "channel":
-        set_channel_status(conn, target_id, decision)
+        set_channel_status(conn, target_id, None if decision == UNDECIDED else decision)
     else:
         try:
             niche_id = int(target_id)

@@ -3,8 +3,9 @@
 Stdlib ``http.server``, bound to 127.0.0.1 only. It serves the dashboard directory as
 static files and takes ``POST /decide`` with ``{"kind", "id", "decision"}``. A decision
 is written to the ``decisions`` table, sets the target's ``status``, is appended to
-``data/decisions.json`` (JSON Lines, the audit trail for undoing a fat-fingered click by
-hand) and rebuilds the dashboard. One person, one machine: no auth, no HTTPS.
+``data/decisions.json`` (JSON Lines, the audit trail) and rebuilds the dashboard. A
+mis-click is undone by another click, ``undecided`` included (035), never by hand. One
+person, one machine: no auth, no HTTPS.
 """
 
 from __future__ import annotations
@@ -24,6 +25,31 @@ HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DECISIONS_FILENAME = "decisions.json"
 MAX_BODY_BYTES = 4096
+
+
+def record(
+    conn: sqlite3.Connection,
+    decisions_path: Path,
+    kind: str,
+    target_id: str,
+    decision: str,
+    via: str | None = None,
+) -> dict[str, str]:
+    """Commit one decision and its ``decisions.json`` line together; return the line.
+
+    The audit line is written before commit: no row without a line. Raises what
+    ``repo.record_decision`` raises and changes nothing. ``via`` marks a decision that did
+    not come from a click (``"cli"`` for ``ytscout decide``, 035).
+    """
+    entry = {"ts": now_utc(), "kind": kind, "id": target_id, "decision": decision}
+    if via:
+        entry["via"] = via
+    with conn:
+        repo.record_decision(conn, kind, target_id, decision, entry["ts"])
+        decisions_path.parent.mkdir(parents=True, exist_ok=True)
+        with decisions_path.open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
 
 
 class ReviewServer(HTTPServer):
@@ -66,17 +92,11 @@ class ReviewServer(HTTPServer):
         The caller rebuilds the page afterwards, so a render failure can never undo, or
         leave unanswered, a decision that has already been committed.
         """
-        entry = {"ts": now_utc(), "kind": kind, "id": target_id, "decision": decision}
         conn = connect(self.db_path)
         try:
-            with conn:  # the audit line is written before commit: no row without a line
-                repo.record_decision(conn, kind, target_id, decision, entry["ts"])
-                self.decisions_path.parent.mkdir(parents=True, exist_ok=True)
-                with self.decisions_path.open("a", encoding="utf-8", newline="\n") as fh:
-                    fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            return record(conn, self.decisions_path, kind, target_id, decision)
         finally:
             conn.close()
-        return entry
 
 
 class ReviewHandler(SimpleHTTPRequestHandler):

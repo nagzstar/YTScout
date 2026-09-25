@@ -1,3 +1,32 @@
+{# Every competitor row carries all three decisions, the current one disabled (035); a
+   decided row can also go back to Candidates. POST /decide to `ytscout serve` (008);
+   from file:// a click shows #serve-note. #}
+{% macro review(c) -%}
+  {%- for value, label in [("approved", "Approve"), ("rejected", "Reject"), ("watch", "Watch")] %}
+          <button type="button" data-kind="channel" data-id="{{ c.id }}" data-decision="{{ value }}"{% if c.status == value %} disabled aria-pressed="true"{% endif %}>{{ label }}</button>
+  {%- endfor %}
+  {%- if c.status %}
+          <button type="button" class="undo" data-kind="channel" data-id="{{ c.id }}" data-decision="undecided" title="Back to Candidates">Undo</button>
+  {%- endif %}
+{%- endmacro %}
+{% macro decided_table(rows) %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Channel</th><th>Status</th><th class="num">Subscribers</th><th>Review</th></tr></thead>
+    <tbody>
+    {% for c in rows %}
+      <tr data-channel-id="{{ c.id }}" data-status="{{ c.status }}">
+        <td><a href="{{ channel_url }}{{ c.id | urlencode }}">{{ c.title or c.id }}</a></td>
+        <td>{{ c.status }}</td>
+        <td class="num">{{ c.subs | number }}</td>
+        <td class="actions">{{ review(c) }}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endmacro %}
 <section id="competitors">
   <h2>Competitors</h2>
   <h3>Candidates ({{ d.candidates | length }})</h3>
@@ -6,20 +35,17 @@
   <div class="table-wrap">
   <table>
     <thead><tr>
-      <th>Channel</th><th class="num">Subscribers</th><th class="num">Hits</th><th>Why suggested</th><th>Review</th>
+      <th>Channel</th><th>Status</th><th class="num">Subscribers</th><th class="num">Hits</th><th>Why suggested</th><th>Review</th>
     </tr></thead>
     <tbody>
     {% for c in d.candidates %}
-      <tr data-channel-id="{{ c.id }}">
+      <tr data-channel-id="{{ c.id }}" data-status="candidate">
         <td><a href="{{ channel_url }}{{ c.id | urlencode }}">{{ c.title or c.id }}</a></td>
+        <td>candidate</td>
         <td class="num">{{ c.subs | number }}</td>
         <td class="num">{{ c.hit_count | number }}</td>
         <td>{% if c.reasons %}<ul class="reasons">{% for r in c.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% else %}–{% endif %}</td>
-        <td class="actions">
-          {# POST /decide to `ytscout serve` (008); from file:// the click shows #serve-note. #}
-          <button type="button" data-kind="channel" data-id="{{ c.id }}" data-decision="approved">Approve</button>
-          <button type="button" data-kind="channel" data-id="{{ c.id }}" data-decision="rejected">Reject</button>
-          <button type="button" data-kind="channel" data-id="{{ c.id }}" data-decision="watch">Watch</button>
+        <td class="actions">{{ review(c) }}
         </td>
       </tr>
     {% endfor %}
@@ -31,23 +57,18 @@
   {% endif %}
   <h3>Approved ({{ d.approved | length }})</h3>
   {% if d.approved %}
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Channel</th><th>Status</th><th class="num">Subscribers</th></tr></thead>
-    <tbody>
-    {% for c in d.approved %}
-      <tr data-channel-id="{{ c.id }}">
-        <td><a href="{{ channel_url }}{{ c.id | urlencode }}">{{ c.title or c.id }}</a></td>
-        <td>{{ c.status }}</td>
-        <td class="num">{{ c.subs | number }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  </div>
+  {{ decided_table(d.approved) }}
   {% else %}
   <p class="empty">Nothing yet. Approve or watch a candidate first.</p>
   {% endif %}
+  <details id="rejected">
+    <summary>Rejected ({{ d.rejected | length }})</summary>
+    {% if d.rejected %}
+    {{ decided_table(d.rejected) }}
+    {% else %}
+    <p class="empty">None rejected.</p>
+    {% endif %}
+  </details>
 </section>
 <section id="side-by-side">
   <h2>Side by side</h2>

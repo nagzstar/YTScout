@@ -70,6 +70,7 @@ class Dashboard:
     own_videos: list[dict[str, Any]] = field(default_factory=list)
     candidates: list[dict[str, Any]] = field(default_factory=list)
     approved: list[dict[str, Any]] = field(default_factory=list)
+    rejected: list[dict[str, Any]] = field(default_factory=list)
     # {window: {format: [row per tracked channel, own first]}} from the latest metrics.
     metrics: dict[str, dict[str, list[dict[str, Any]]]] = field(default_factory=dict)
     metrics_at: str | None = None
@@ -198,8 +199,8 @@ def load(
         _competitor(r)
         for r in _rows(
             conn,
-            f"SELECT c.id, c.title, c.discovery_json, {_LATEST_SUBS} AS subs FROM channels c"
-            " WHERE c.role = 'competitor' AND c.status IS NULL",
+            f"SELECT c.id, c.title, c.status, c.discovery_json, {_LATEST_SUBS} AS subs"
+            " FROM channels c WHERE c.role = 'competitor' AND c.status IS NULL",
         )
     ]
     dash.candidates.sort(key=lambda r: (-(r["score"] or 0), r["title"] or "", r["id"]))
@@ -210,6 +211,16 @@ def load(
             f"SELECT c.id, c.title, c.status, c.discovery_json, {_LATEST_SUBS} AS subs"
             " FROM channels c WHERE c.role = 'competitor' AND c.status IN ('approved', 'watch')"
             " ORDER BY c.status, c.title, c.id",
+        )
+    ]
+    # Rejected (035): kept on the page, collapsed, so a mis-click can be undone.
+    dash.rejected = [
+        _competitor(r)
+        for r in _rows(
+            conn,
+            f"SELECT c.id, c.title, c.status, c.discovery_json, {_LATEST_SUBS} AS subs"
+            " FROM channels c WHERE c.role = 'competitor' AND c.status = 'rejected'"
+            " ORDER BY c.title, c.id",
         )
     ]
     _load_metrics(conn, dash, moment)

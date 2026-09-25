@@ -109,9 +109,8 @@ def test_build_from_seeded_db(seeded: Path, tmp_path: Path) -> None:
     for title in FIXTURE_TITLES:
         assert title in html
     assert html.count('href="https://www.youtube.com/watch?v=own0000000') == 5
-    for cid in ("UCcand1", "UCcand2", "UCappr"):
+    for cid in ("UCcand1", "UCcand2", "UCappr", "UCrej"):  # 035: rejected stays listed
         assert f'href="https://www.youtube.com/channel/{cid}"' in html
-    assert 'href="https://www.youtube.com/channel/UCrej"' not in html
     assert_self_contained(html)
 
 
@@ -154,13 +153,14 @@ def test_candidates_sorted_by_score_and_approved_split(seeded: Path, tmp_path: P
 
     html = _build(seeded, tmp_path / "index.html")
     assert "Wild Tops &lt;5&gt;" in html  # escaped, not raw markup
-    assert "Rejected Rivals" not in html
+    # 035: rejected channels stay on the page, in a collapsed table.
+    assert re.search(r'<details id="rejected">\s*<summary>Rejected \(1\)</summary>', html)
+    assert "Rejected Rivals" in html
     # 008: 3 live buttons x 2 candidate rows, each carrying what POST /decide needs.
-    buttons = re.findall(r"<button [^>]*>", html)
+    buttons = re.findall(r'<button [^>]*data-id="UCcand[12]"[^>]*>', html)
     assert len(buttons) == 6
     for tag in buttons:
         assert 'data-kind="channel"' in tag
-        assert re.search(r'data-id="UCcand[12]"', tag)
         assert re.search(r'data-decision="(approved|rejected|watch)"', tag)
         assert "disabled" not in tag
     assert 'data-id="UCcand1" data-decision="approved"' in html

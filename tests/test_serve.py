@@ -14,8 +14,9 @@ from pathlib import Path
 
 import pytest
 
+from ytscout.dashboard.build import load
 from ytscout.dashboard.serve import HOST, ReviewServer, make_server
-from ytscout.store import connect, repo
+from ytscout.store import connect, read_copy, repo
 
 SERVE_PY = Path(__file__).parents[1] / "src" / "ytscout" / "dashboard" / "serve.py"
 
@@ -139,9 +140,11 @@ def test_three_decisions_land_everywhere(
 
     assert index.stat().st_mtime_ns > before
     html = index.read_text(encoding="utf-8")
-    assert 'data-id="UCa"' not in html  # decided rows leave the candidates table
-    assert "Channel UCa" in html and "Channel UCc" in html  # approved + watch listed
-    assert "Channel UCb" not in html  # rejected hidden
+    assert "Candidates (0)" in html  # decided rows leave the candidates table
+    # 035: every decided row stays on the page with its current decision disabled.
+    for cid, decision in clicks:
+        assert f'data-id="{cid}" data-decision="{decision}" disabled' in html
+    assert "<summary>Rejected (1)</summary>" in html
 
 
 def test_rebuild_failure_still_answers_and_keeps_the_decision(
@@ -239,3 +242,29 @@ def test_cli_prints_url_and_stops_cleanly_on_ctrl_c(
     assert "open http://127.0.0.1:" in out and "serve: stopped" in out
     assert (tmp_path / "dashboard" / "index.html").is_file()
     assert not (tmp_path / "data").exists()  # starting up reads the DB, never creates it
+
+
+def test_undecided_returns_a_channel_to_candidates(
+    server: ReviewServer, db_path: Path, tmp_path: Path
+) -> None:
+    for decision in ("approved", "undecided"):
+        body = {"kind": "channel", "id": "UCa", "decision": decision}
+        assert request(server, "POST", "/decide", body) == (200, {"ok": True})
+
+    assert statuses(db_path)["UCa"] is None
+    conn = read_copy(db_path)
+    try:
+        dash = load(conn)
+    finally:
+        conn.close()
+    assert "UCa" in [c["id"] for c in dash.candidates]
+    assert "UCa" not in [c["id"] for c in dash.approved + dash.rejected]
+
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute("SELECT target_id, decision FROM decisions ORDER BY id").fetchall()
+    finally:
+        conn.close()
+    assert rows == [("UCa", "approved"), ("UCa", "undecided")]
+    lines = (tmp_path / "data" / "decisions.json").read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["decision"] for line in lines] == ["approved", "undecided"]

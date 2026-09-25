@@ -147,6 +147,7 @@ COMMANDS: tuple[str, ...] = (
     "discover",
     "dashboard",
     "serve",
+    "decide",
     "score",
     "packet",
     "analyse",
@@ -291,6 +292,34 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"port on 127.0.0.1 (default {serve_mod.DEFAULT_PORT})",
     )
     serve.set_defaults(func=cmd_serve)
+
+    decide = sub.add_parser(
+        "decide",
+        help="bulk approve/reject/watch/undecide competitors, with an audit line (no network)",
+    )
+    target = decide.add_mutually_exclusive_group(required=True)
+    target.add_argument(
+        "--channel",
+        action="append",
+        metavar="ID",
+        help="a competitor channel id (repeatable)",
+    )
+    target.add_argument(
+        "--where",
+        metavar="EXPR",
+        help='SQL filter over id, title, status, subs, e.g. "subs < 10000 and status is null"',
+    )
+    decide.add_argument(
+        "--set",
+        dest="decision",
+        required=True,
+        choices=repo.DECISIONS["channel"],
+        help="the decision; undecided puts a channel back in Candidates",
+    )
+    decide.add_argument(
+        "--dry-run", action="store_true", help="list the rows it would change; write nothing"
+    )
+    decide.set_defaults(func=cmd_decide)
 
     packet = sub.add_parser(
         "packet", help="write one analysis packet for Claude and print its path (debugging)"
@@ -1483,6 +1512,59 @@ def cmd_serve(args: argparse.Namespace, _extras: list[str]) -> int:
     finally:
         server.server_close()
     return EXIT_OK
+
+
+def cmd_decide(args: argparse.Namespace, _extras: list[str]) -> int:
+    """Record one decision per matching competitor, as a dashboard click would (035)."""
+    found = _dashboard_db_path("decide")
+    if found is None:
+        return EXIT_ERROR
+    _root, db_path = found
+    if not db_path.is_file():
+        print(f"decide: no database at {db_path}", file=sys.stderr)
+        return EXIT_ERROR
+    # A dry run reads an in-memory copy, so not even a migration touches the file.
+    conn = read_copy(db_path) if args.dry_run else connect(db_path)
+    try:
+        try:
+            rows = repo.competitors_to_decide(conn, where=args.where, ids=args.channel or ())
+        except sqlite3.Error as exc:
+            print(f"decide: bad --where {args.where!r}: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        missing = [i for i in args.channel or () if i not in {r["id"] for r in rows}]
+        if missing:
+            print(f"decide: no competitor {', '.join(missing)}; nothing written", file=sys.stderr)
+            return EXIT_ERROR
+        new = None if args.decision == repo.UNDECIDED else args.decision
+        verb = "would set" if args.dry_run else "set"
+        changed = 0
+        for row in rows:
+            subs = "-" if row["subs"] is None else f"{row['subs']:,}"
+            label = f"{row['id']}  {row['title'] or '-'}  subs={subs}"
+            if row["status"] == new:
+                print(f"  unchanged  {label}  (already {row['status'] or 'undecided'})")
+                continue
+            if not args.dry_run:
+                serve_mod.record(
+                    conn,
+                    db_path.parent / serve_mod.DECISIONS_FILENAME,
+                    "channel",
+                    row["id"],
+                    args.decision,
+                    via="cli",
+                )
+            print(f"  {verb}  {label}  {row['status'] or 'undecided'} -> {args.decision}")
+            changed += 1
+        if args.dry_run:
+            print(f"decide: dry run; {changed} of {len(rows)} rows would change, nothing written")
+        else:
+            print(
+                f"decide: {changed} of {len(rows)} rows changed, each in `decisions` and "
+                f"{serve_mod.DECISIONS_FILENAME}; run `ytscout dashboard` to refresh the page"
+            )
+        return EXIT_OK
+    finally:
+        conn.close()
 
 
 def cmd_dashboard(args: argparse.Namespace, _extras: list[str]) -> int:

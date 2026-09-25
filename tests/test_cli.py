@@ -28,6 +28,7 @@ EXPECTED = {
     "scout",
     "dashboard",
     "serve",
+    "decide",
     "audit",
 }
 
@@ -42,9 +43,9 @@ def run_cli(*argv: str, cwd: Path | None = None) -> subprocess.CompletedProcess[
     )
 
 
-def test_command_table_is_exactly_the_eleven() -> None:
+def test_command_table_is_exactly_the_twelve() -> None:
     assert set(COMMANDS) == EXPECTED
-    assert len(COMMANDS) == 11
+    assert len(COMMANDS) == 12
 
 
 def test_help_exits_zero_and_lists_all_commands() -> None:

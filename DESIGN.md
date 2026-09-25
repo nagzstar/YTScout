@@ -375,6 +375,7 @@ CLI subcommands and what they do:
 | `score [--niches / --competitors / --all]` | Pure computation from the DB | no |
 | `dashboard` | Build `dashboard/index.html` | no |
 | `serve` | Localhost review server for approve/reject/track/shelve | no |
+| `decide --channel ID / --where EXPR --set approved/rejected/watch/undecided [--dry-run]` | Bulk or undo channel decisions, audited like a click (035) | no |
 | `audit` | Validate and print the pipeline coverage tables | no |
 
 Every command that can hit the Data API requires `--max-units N` or `--dry-run`. Exit codes: `0` ok, `1` error, `2` not implemented yet, `3` quota exhausted (resume tomorrow), `4` no OAuth token, `5` `claude` unavailable.
@@ -401,7 +402,7 @@ Core tables; columns abbreviated. All timestamps UTC.
 - **channel_metrics** — `id, channel_id, computed_at, window, format, metrics_json` (appended per refresh; latest wins)
 - **api_cache** — `key, etag, body_json, fetched_at` (ETag cache for the Data API)
 - **collector_state** — `kind, run_id, key, done_at` (resume checkpoints across quota days; `run_id` is the ISO week, or `niche-<id>` for `scout validate`; 032)
-- **decisions** — `id, kind, target_id, decision, decided_at` (approve/reject/watch clicks)
+- **decisions** — `id, kind, target_id, decision, decided_at` (approve/reject/watch clicks; `undecided` returns a channel to Candidates, 035; `ytscout decide` lines in `decisions.json` carry `"via": "cli"`)
 - **schema_migrations** — `version, applied_at` (one row per applied `store/migrations/NNNN_*.sql`)
 
 12-month history comes from keeping snapshots, never overwriting: `channel_snapshots` and `video_snapshots` have triggers that refuse UPDATE and DELETE.
