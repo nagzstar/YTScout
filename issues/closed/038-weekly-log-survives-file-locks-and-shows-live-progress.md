@@ -48,3 +48,36 @@ cannot show where a run is.
 
 The lost run is `logs/weekly-20260925-0104.log`; lines 20–96 were restored by hand from
 the console and 97–105 reconstructed from the `runs` table, each block under a NOTE marker. The 014 Outcome has the timings.
+
+## Outcome (closed 2026-09-25)
+
+Delivered in `scripts/run_weekly.ps1`:
+
+- `Write-Log` no longer uses `Add-Content`. Each line is appended through a
+  `[System.IO.StreamWriter]` over a `FileStream` opened `Append, Write, ReadWrite`
+  (UTF-8, no BOM), so a reader that shares read/write (`tail -f`, an editor, 031's
+  panel) no longer blocks the writer.
+- A reader that *denies* writers cannot be defeated by any share mode, so lines that
+  cannot be written go into a pending buffer: 5 tries × 200 ms for a fresh line, then
+  one try per line while a backlog exists (a 45-minute lock would otherwise add 1 s to
+  every per-video line), and the whole backlog is written, in order, at the next
+  success. `Complete-Log` gives the final `DONE` line up to 5 s more. Every line
+  still goes to stdout too.
+- Every step runs `python -u -m ytscout ...` and `PYTHONUNBUFFERED=1` is set next to
+  `PYTHONIOENCODING`. `-DryRun` prints `.venv\Scripts\python.exe -u -m ytscout ...`.
+  Log lines now read `RUN   python -u -m ytscout ...`.
+
+Proved by `tests/test_scripts.py` (all run, `pytest -q` 535 passed):
+
+- `test_dry_run_runs_python_unbuffered`: `-u` on every dry-run line, env var in the script.
+- `test_log_survives_a_shared_reader_like_tail` and `test_log_survives_an_exclusive_reader`:
+  a real (non-dry) run against a fake interpreter (a `.cmd` wrapping a Python helper).
+  On the transcripts step the helper opens `YTSCOUT_RUN_LOG` with `CreateFileW`
+  (read access; share read|write for 1 s, then share none for 3 s) while printing lines.
+  The tests assert the lock was taken, and that the log equals the script's stdout line
+  for line, in order, and ends in `DONE  exit 0`.
+- The exit-code tests' fake `.cmd` matches one positional argument later because of `-u`.
+
+Left: a lock held past the end of the run (more than 5 s after `DONE`) still loses the
+tail of the log file; stdout has it. Not checked: a real `tail -f` from Git Bash against a
+scheduled run. The share-read/write test is the stand-in for it.
