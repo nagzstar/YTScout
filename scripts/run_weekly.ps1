@@ -67,7 +67,8 @@ $Steps = @(
 )
 
 function Get-StepArgs($Step) {
-    $a = @('-m', 'ytscout') + $Step.Args
+    # -u: unbuffered, so each per-video line reaches the log as it happens (038).
+    $a = @('-u', '-m', 'ytscout') + $Step.Args
     if ($Resume -and $Step.Collector) {
         $a += '--resume'
     }
@@ -90,19 +91,60 @@ if (-not (Test-Path $LogDir)) {
 }
 $LogFile = Join-Path $LogDir ('weekly-' + (Get-Date -Format 'yyyyMMdd-HHmm') + '.log')
 
+# Lines not yet in the log because another process held it (038). Add-Content lost 77
+# lines while a `tail -f` had the file open; this writer opens the file in shared mode,
+# retries, and keeps what it could not write for the next attempt, so no line is lost.
+$script:PendingLog = New-Object System.Collections.Generic.List[string]
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+function Write-PendingLog([int]$Attempts) {
+    for ($i = 0; $i -lt $Attempts; $i++) {
+        try {
+            $fs = New-Object System.IO.FileStream($LogFile, [System.IO.FileMode]::Append,
+                [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+            $w = New-Object System.IO.StreamWriter($fs, $Utf8NoBom)
+            try {
+                foreach ($l in $script:PendingLog) {
+                    $w.WriteLine($l)
+                }
+            }
+            finally {
+                $w.Dispose()
+            }
+            $script:PendingLog.Clear()
+            break
+        }
+        catch {
+            if ($i -lt $Attempts - 1) {
+                Start-Sleep -Milliseconds 200
+            }
+        }
+    }
+}
+
 function Write-Log([string]$Message) {
     $line = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '  ' + $Message
-    Add-Content -Path $LogFile -Value $line -Encoding UTF8
+    # Retry a fresh backlog; once lines are pending, try once per line so a long lock
+    # does not add a second to every line of output.
+    $attempts = 5
+    if ($script:PendingLog.Count -gt 0) {
+        $attempts = 1
+    }
+    $script:PendingLog.Add($line)
+    Write-PendingLog $attempts
+    # stdout always gets the line, so the console (or Task Scheduler) has it regardless.
     Write-Output $line
 }
 
 Write-Log "YT Scout weekly run starting in $RepoRoot"
 if (-not (Test-Path $Python)) {
     Write-Log "ERROR: $Python not found; create the venv first (see README)."
+    Write-PendingLog 25
     exit 1
 }
 
 $env:PYTHONIOENCODING = 'utf-8'
+$env:PYTHONUNBUFFERED = '1'
 # Each step's `runs` row records this log's path; the dashboard shows the latest (031).
 $env:YTSCOUT_RUN_LOG = $LogFile
 $quotaHit = $false
@@ -145,13 +187,21 @@ finally {
     Pop-Location
 }
 
+# Last chance for lines a reader's lock held back: up to 5 s before the run exits.
+function Complete-Log([string]$Message) {
+    Write-Log $Message
+    if ($script:PendingLog.Count -gt 0) {
+        Write-PendingLog 25
+    }
+}
+
 if ($quotaHit) {
-    Write-Log "DONE  exit 3 (quota exhausted). Log: $LogFile"
+    Complete-Log "DONE  exit 3 (quota exhausted). Log: $LogFile"
     exit 3
 }
 if ($failed) {
-    Write-Log "DONE  exit 1 (a step failed). Log: $LogFile"
+    Complete-Log "DONE  exit 1 (a step failed). Log: $LogFile"
     exit 1
 }
-Write-Log "DONE  exit 0. Log: $LogFile"
+Complete-Log "DONE  exit 0. Log: $LogFile"
 exit 0
