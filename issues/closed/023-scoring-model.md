@@ -92,3 +92,65 @@ would be 0.6 with 4 small channels → 0.4; a `presenter` requirement → `inf` 
 `DESIGN.md §6` is the spec; if you find the worked example disagrees with §6, the formula
 in §6 wins and you fix the example and say so. The £1.04 is not a bug — Shorts RPM is
 tiny, and that fact is exactly what the long-form column exists to show.
+
+## Outcome (closed 2026-09-25)
+
+Delivered `src/ytscout/scoring/{types,opportunity,money,effort,final}.py`, a
+`niche_scoring:` section in `config/scoring.yaml` with `scoring.niche_scoring_config`
+to validate it, and `tests/test_scoring.py` (33 tests) carrying the worked example
+verbatim. Every bold number in the table above is asserted to 3 significant figures and
+matches DESIGN.md §6 as written; the example needed no correction. Suite: 407 passed;
+ruff format and check clean; `grep -rn "sqlite\|conn" src/ytscout/scoring/` finds
+nothing (also a test). Commit c1ed302.
+
+Decisions, and why:
+
+- **Config shape.** The keys the Scope lists sit under `niche_scoring:` rather than at the
+  top level, next to the `discovery:`, `competitor_metrics:` and `niche_validation:`
+  sections earlier issues made. `niche_scoring_config(doc)` returns a plain dict (the
+  section plus the top-level `shorts_max_seconds`) and that dict is the `cfg` every
+  function in `opportunity.py` takes, so a test can pass `{**CFG, "outlier_multiplier": 2}`
+  and watch the outlier set change (`test_outlier_multiplier_from_config_changes_the_outlier_set`).
+  `small_subs_max`/`small_age_days` repeat `niche_validation` and `outlier_multiplier`/
+  `outlier_window_videos` repeat `competitor_metrics` on purpose: each section is read by
+  a different command; `test_yaml_matches_worked_example_config` fails if the pairs drift.
+  `videos_per_month: {shorts: 20, longform: 4}` (§6.4) was added to the section because
+  024 needs it and every other number was already there.
+- **Format first.** A niche is `format × topic`, so every view count, median and outlier
+  is over the channel's videos in the sample's format (`duration_s ≤ shorts_max_seconds`
+  is a Short; no duration means no format). The median uses the channel's newest
+  `outlier_window_videos` in-format videos whether or not they fall inside the window;
+  only videos inside the window can be outliers or contribute views.
+- **Unknown is not big.** `is_small` returns `None` when subs or creation date are
+  missing (022 stores NULL for hidden subscriber counts). Such channels count in the
+  niche's totals and in concentration, never in the small set.
+- **Empty cases.** `small_outlier_rate` and `newcomer_view_share` are 0 with nothing to
+  divide; `concentration` is 1.0 for a niche with no views (no evidence of room, so the
+  inverse term contributes nothing); `newcomer_monthly_views` returns `None` with no small
+  channel and `(v, v, v)` with one, since `statistics.quantiles` needs two points.
+- **Money never imports the loader.** `scout.propose.load_rpm_tiers` pulls in `sqlite3`
+  and the store, so `money.py` accepts any object with `row(category, fmt).mid` (a
+  `Protocol`); the real `RpmTable` satisfies it, the test uses a five-line fake.
+  `calibration` is 1.0 when the own RPM is `None` or 0, and `money.UNCALIBRATED` names
+  the badge for the dashboard. Note the real table's `animals_nature.shorts.mid` is 0.05,
+  not the example's 0.08; the example's table is a literal in the test.
+- **Effort reuses the audit.** `manual_hours_per_video` sums `audit.effective_hours` over
+  the required steps and returns `(hours, flags)`: `inf` and `disqualified` when a
+  required step is `disqualifying_for_faceless`; a required step with no coverage entry
+  is costed manual; an unknown step id raises `KeyError`. A format outside
+  `formats_supported` is costed fully manual, as the audit does. `final.score` returns 0
+  for `inf` hours so a disqualified niche ranks last rather than crashing.
+- `opportunity` and `manual_hours_per_video` both return `(value, flags)` with the flag
+  names as module constants (`LOW_CONFIDENCE`, `DISQUALIFIED`, `UNCALIBRATED`) for 024
+  to store.
+
+Unverified: nothing needed a human.
+
+For 024: build `NicheSample` from `channels`/`videos` rows (latest snapshot views,
+`published_at`, `duration_s`, subs and creation date, both nullable), the `RpmTable`
+via `scout.propose.load_rpm_tiers`, steps and coverage via `audit.load_steps` /
+`load_coverage`, the own RPM in USD from the own-channel Analytics rows (calibration =
+1.0 when absent, store the `uncalibrated` flag), `usd_gbp` from settings, and the
+niche's required step ids and topic category from its stored brainstorm output.
+`window_days` is 90, so a niche validated with 022's 365-day lookback has plenty of
+history but only the last 90 days count.
