@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import platform
 import sqlite3
 import sys
 from collections.abc import Iterator, Sequence
@@ -19,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ytscout import __version__, claude_runner, dashboard, packets
+from ytscout import doctor as doctor_mod
 from ytscout.analyse import DEFAULT_LIMIT as DEFAULT_SUMMARY_LIMIT
 from ytscout.analyse import (
     analyse_competitors,
@@ -155,7 +155,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     sub.required = True
 
-    doctor = sub.add_parser("doctor", help="check settings and secrets are present (no values)")
+    doctor = sub.add_parser(
+        "doctor", help="check every dependency; prints no secret (1 unit, 1 claude -p call)"
+    )
+    doctor.add_argument(
+        "--offline",
+        action="store_true",
+        help="skip the Data API, OAuth token and claude login probes (no units, no claude -p)",
+    )
     doctor.set_defaults(func=cmd_doctor)
 
     auth = sub.add_parser(
@@ -2132,32 +2139,11 @@ def _yes_no(flag: bool) -> str:
     return "yes" if flag else "no"
 
 
-def cmd_doctor(_args: argparse.Namespace, _extras: list[str]) -> int:
-    """Report what is configured, naming files but never printing their contents."""
-    print(f"python: {platform.python_version()} ({sys.executable})")
-    try:
-        settings: Settings = load()
-    except SettingsError as exc:
-        print(f"settings: MISSING - {exc}")
-        return EXIT_ERROR
-
-    rel = _relative_to_root(settings)
-    print(f"settings: ok ({rel(settings.settings_path)})")
-    print(f"repo root: {settings.repo_root}")
-    print(f"own_channel_id: {_yes_no(bool(settings.own_channel_id))}")
-    print(f"YT_API_KEY: {_yes_no(settings.has_api_key)}")
-    print(
-        f"client secret: {rel(settings.client_secret_path)}: "
-        f"{_yes_no(settings.client_secret_path.is_file())}"
-    )
-    print(f"oauth token: {rel(settings.token_path)}: {_yes_no(settings.token_path.is_file())}")
-    try:
-        bundle = tls.ca_bundle(settings.data_dir)
-    except tls.TlsError as exc:
-        print(f"tls ca bundle: BROKEN - {exc}")
-        return EXIT_ERROR
-    print(f"tls ca bundle: {bundle.describe()}")
-    return EXIT_OK
+def cmd_doctor(args: argparse.Namespace, _extras: list[str]) -> int:
+    """Print the dependency table; exit 1 when a required check fails (030)."""
+    report = doctor_mod.run_checks(offline=args.offline)
+    print(doctor_mod.format_table(report, ascii_only=not doctor_mod.can_print_marks(sys.stdout)))
+    return EXIT_OK if report.ok else EXIT_ERROR
 
 
 def cmd_audit(args: argparse.Namespace, _extras: list[str]) -> int:

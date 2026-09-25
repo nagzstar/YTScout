@@ -1,4 +1,4 @@
-"""CLI: help lists every command, stubs exit 2, doctor exits 1/0 on missing/present settings."""
+"""CLI: help lists every command, stubs exit 2 (doctor itself: test_doctor.py)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import pytest
 
 from ytscout.cli import (
     COMMANDS,
-    EXIT_ERROR,
     EXIT_NOT_IMPLEMENTED,
     EXIT_OK,
     SCOUT_STUBS,
@@ -102,43 +101,6 @@ def test_collect_own_without_max_units_refuses_via_subprocess(tmp_path: Path) ->
     result = run_cli("collect", "--own", cwd=tmp_path)
     assert result.returncode != EXIT_OK
     assert "--max-units" in result.stderr
-
-
-def test_doctor_exits_1_without_settings(tmp_path: Path) -> None:
-    result = run_cli("doctor", cwd=tmp_path)
-    assert result.returncode == EXIT_ERROR, result.stdout + result.stderr
-    assert "settings: MISSING" in result.stdout
-    assert "settings.example.yaml" in result.stdout
-
-
-def test_doctor_exits_0_with_minimal_settings(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
-    (tmp_path / "config").mkdir()
-    (tmp_path / "config" / "settings.yaml").write_text(
-        "own_channel_id: UCtest123\n", encoding="utf-8"
-    )
-    result = run_cli("doctor", cwd=tmp_path)
-    assert result.returncode == EXIT_OK, result.stdout + result.stderr
-    out = result.stdout
-    assert "settings: ok" in out
-    assert "YT_API_KEY: no" in out
-    assert "client_secret.json: no" in out
-    assert "token.json: no" in out
-    assert "tls ca bundle: " in out
-    assert "UCtest123" not in out  # doctor reports presence, never values
-
-
-def test_doctor_never_prints_the_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
-    (tmp_path / "config").mkdir()
-    (tmp_path / "config" / "settings.yaml").write_text(
-        "own_channel_id: UCtest123\n", encoding="utf-8"
-    )
-    monkeypatch.setenv("YT_API_KEY", "fake-key-value-for-test")
-    result = run_cli("doctor", cwd=tmp_path)
-    assert result.returncode == EXIT_OK
-    assert "YT_API_KEY: yes" in result.stdout
-    assert "fake-key-value-for-test" not in result.stdout + result.stderr
 
 
 def test_collect_accepts_resume_as_a_no_op_flag() -> None:
