@@ -306,6 +306,40 @@ def add_quota_used(conn: sqlite3.Connection, day_pacific: str, units: int) -> No
     )
 
 
+# --- collector checkpoints (032) ---------------------------------------------------------
+
+
+def mark_collector_done(
+    conn: sqlite3.Connection,
+    kind: str,
+    run_id: str,
+    key: str,
+    done_at: str | datetime | None = None,
+) -> None:
+    """Record that ``key`` finished for ``kind`` in logical run ``run_id``."""
+    conn.execute(
+        "INSERT INTO collector_state (kind, run_id, key, done_at) VALUES (?, ?, ?, ?)"
+        " ON CONFLICT(kind, run_id, key) DO UPDATE SET done_at = excluded.done_at",
+        (kind, run_id, key, _ts(done_at) or now_utc()),
+    )
+
+
+def collector_done_keys(
+    conn: sqlite3.Connection, kind: str, run_id: str, since: str | datetime
+) -> set[str]:
+    """Keys of ``kind`` done in ``run_id`` at or after ``since``."""
+    rows = conn.execute(
+        "SELECT key FROM collector_state WHERE kind = ? AND run_id = ? AND done_at >= ?",
+        (kind, run_id, _ts(since)),
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def clear_collector_state(conn: sqlite3.Connection, before: str | datetime) -> int:
+    """Delete checkpoints older than ``before``; return how many went."""
+    return conn.execute("DELETE FROM collector_state WHERE done_at < ?", (_ts(before),)).rowcount
+
+
 # --- api cache ----------------------------------------------------------------------------
 
 

@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ytscout.collect.competitors import RECENT_DAYS
+from ytscout.collect.resume import Checkpoint
 from ytscout.collect.walk import (
     DRY_RUN_UPLOADS,
     DRY_RUN_VIDEO_IDS,
@@ -191,13 +192,21 @@ def collect_niches(
     *,
     shorts_max_seconds: int,
     now: datetime,
+    checkpoint: Checkpoint | None = None,
 ) -> NicheRefreshResult:
     """Refresh each of ``niches`` (``id``, ``label``, ``format``, ``topic`` and ``channels``:
     rows with ``id``, ``uploads_playlist_id``), in order. Stops at the first quota refusal.
+
+    With a ``checkpoint``, niches already done this run are skipped (their channels count
+    as refreshed, so a later niche sharing them does not redo them) and each finished
+    niche is marked done.
     """
     result = NicheRefreshResult()
     seen: set[str] = set()
     for niche in niches:
+        if checkpoint is not None and checkpoint.skip(str(niche["id"])):
+            seen.update(c["id"] for c in niche["channels"])
+            continue
         report = NicheReport(int(niche["id"]), niche_label(niche))
         result.reports.append(report)
         before = api.ledger.run_used
@@ -218,6 +227,8 @@ def collect_niches(
             return result
         finally:
             report.units = api.ledger.run_used - before
+        if checkpoint is not None:
+            checkpoint.mark(str(niche["id"]))
     return result
 
 

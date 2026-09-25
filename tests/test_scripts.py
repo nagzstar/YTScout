@@ -89,6 +89,15 @@ def test_install_task_parses_without_running() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_install_task_adds_a_tuesday_resume_trigger() -> None:
+    """032: a second trigger after the 08:00 UK reset; -Resume is on the (shared) action."""
+    text = (REPO / "scripts" / "install_task.ps1").read_text(encoding="utf-8")
+    assert "[string]$ResumeAt = '09:00'" in text
+    assert "$ResumeDay = [System.DayOfWeek]::Tuesday" in text
+    assert "-DaysOfWeek $ResumeDay -At $resumeTime" in text
+    assert '-File `"$Script`" -Resume"' in text
+
+
 def _real_run(tmp_path: Path, fake_body: str) -> tuple[int, str]:
     """Run the non-dry path against a fake interpreter (a .cmd) and a temp log dir."""
     assert POWERSHELL is not None

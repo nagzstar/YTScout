@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from ytscout.collect.resume import Checkpoint
 from ytscout.collect.walk import Counts, to_int, walk_uploads
 from ytscout.store import now_utc, repo
 from ytscout.youtube import DataApi, QuotaExhausted
@@ -20,9 +21,16 @@ def collect_own(
     *,
     videos: int,
     shorts_max_seconds: int,
+    checkpoint: Checkpoint | None = None,
 ) -> Counts:
-    """Refresh the own channel and walk its uploads. Quota stops land in ``stopped``."""
+    """Refresh the own channel and walk its uploads. Quota stops land in ``stopped``.
+
+    With a ``checkpoint``, a channel already done this run is skipped (no calls) and a
+    finished one is marked done.
+    """
     counts = Counts()
+    if checkpoint is not None and checkpoint.skip(channel_id):
+        return counts
     try:
         response = api.channels([channel_id])
     except QuotaExhausted as exc:
@@ -70,6 +78,9 @@ def collect_own(
     counts.channel_snapshots += 1
     channel = repo.get_channel(conn, item["id"])
     assert channel is not None
-    return walk_uploads(
+    walk_uploads(
         api, conn, channel, limit=videos, shorts_max_seconds=shorts_max_seconds, counts=counts
     )
+    if checkpoint is not None and counts.stopped is None:
+        checkpoint.mark(channel_id)
+    return counts

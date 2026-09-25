@@ -23,7 +23,9 @@
     Print each command instead of running it, write no log, exit 0.
 
 .PARAMETER Resume
-    Pass --resume to the collectors (issue 032; a no-op until then).
+    Pass --resume to the collectors (issue 032): each skips the channels or niches this
+    ISO week's run already finished, so a quota-stopped week picks up where it stopped.
+    install_task.ps1 always passes it; the Tuesday 09:00 trigger is the resume run.
 
 .PARAMETER Python
     Interpreter to run ytscout with (default: the repo venv). A test seam.

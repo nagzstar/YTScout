@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
+from ytscout.collect.resume import KIND_VALIDATE, open_checkpoint, validate_run_id
 from ytscout.collect.walk import batches, store_video, to_int, upload_page
 from ytscout.scoring import ValidationConfig
 from ytscout.store import repo, to_utc_iso
@@ -127,6 +128,8 @@ class ValidateResult:
     stopped: QuotaExhausted | None = None
     # Set when the stop came from the headroom check, before the niche spent anything.
     not_started: NicheReport | None = None
+    # Niches a --resume run found already validated in their logical run.
+    skipped: list[int] = field(default_factory=list)
 
     @property
     def validated(self) -> list[NicheReport]:
@@ -289,14 +292,29 @@ def validate_niches(
     cfg: ValidationConfig,
     shorts_max_seconds: int,
     now: datetime,
+    resume: bool = False,
 ) -> ValidateResult:
     """Validate ``niches`` in order; stop cleanly on the first quota stop.
 
     A niche starts only if ``worst_case_units`` fits the headroom; otherwise the run stops
     with a ``QuotaExhausted`` in ``result.stopped`` and that niche in ``not_started``.
+
+    Each validated niche is checkpointed as its own logical run (``niche-<id>``, 032); a
+    niche is atomic, so there is nothing finer to resume. With ``resume``, a niche
+    validated within ``STATE_TTL_DAYS`` is skipped and listed in ``result.skipped``.
     """
     result = ValidateResult()
     for niche in niches:
+        checkpoint = open_checkpoint(
+            conn,
+            KIND_VALIDATE,
+            validate_run_id(niche["id"]),
+            now,
+            resume=resume,
+        )
+        if checkpoint.skip(str(niche["id"])):
+            result.skipped.append(int(niche["id"]))
+            continue
         report = new_report(niche)
         need = worst_case_units(cfg, len(planned_searches(niche)))
         left = headroom(api)
@@ -323,6 +341,7 @@ def validate_niches(
             result.reports.append(report)
             result.stopped = exc
             return result
+        checkpoint.mark(str(niche["id"]))
         result.reports.append(report)
     return result
 

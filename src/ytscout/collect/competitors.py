@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
+from ytscout.collect.resume import Checkpoint
 from ytscout.collect.walk import (
     DRY_RUN_UPLOADS,
     DRY_RUN_VIDEO_IDS,
@@ -158,14 +159,20 @@ def collect_competitors(
     own_channel_id: str,
     shorts_max_seconds: int,
     now: datetime,
+    checkpoint: Checkpoint | None = None,
 ) -> CompetitorResult:
     """Refresh the own channel and every row of ``channels`` (``id``, ``title``,
     ``uploads_playlist_id``). Each batch commits as it lands; a quota stop ends the run
     and is returned in ``result.stopped``.
+
+    With a ``checkpoint``, channels already done this run are left out entirely (no
+    ``channels.list`` share either), and each channel is marked done once its videos land.
     """
     result = CompetitorResult()
     known = {c["id"]: c for c in channels}
     ids = [own_channel_id, *(c["id"] for c in channels if c["id"] != own_channel_id)]
+    if checkpoint is not None:
+        ids = [cid for cid in ids if not checkpoint.skip(cid)]
     dry_run = api.ledger.dry_run
     cutoff = now - timedelta(days=RECENT_DAYS)
     try:
@@ -184,6 +191,8 @@ def collect_competitors(
             uploads = DRY_RUN_UPLOADS
         if not uploads:
             report.stop = STOP_NO_UPLOADS
+            if checkpoint is not None:
+                checkpoint.mark(channel_id)
             continue
         before = api.ledger.run_used
         try:
@@ -205,4 +214,6 @@ def collect_competitors(
             return result
         finally:
             report.units = api.ledger.run_used - before
+        if checkpoint is not None:
+            checkpoint.mark(channel_id)
     return result

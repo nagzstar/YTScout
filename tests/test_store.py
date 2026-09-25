@@ -99,7 +99,7 @@ def test_addition_tables_have_the_issue_columns(conn: sqlite3.Connection) -> Non
         "metrics_json",
     ]
     assert _columns(conn, "api_cache") == ["key", "etag", "body_json", "fetched_at"]
-    assert _columns(conn, "collector_state") == ["kind", "key", "done_at"]
+    assert _columns(conn, "collector_state") == ["kind", "run_id", "key", "done_at"]
     assert _columns(conn, "decisions") == ["id", "kind", "target_id", "decision", "decided_at"]
 
 
@@ -120,7 +120,7 @@ def test_connect_twice_applies_nothing_new(tmp_path: Path) -> None:
     connect(path).close()
     c = connect(path)
     rows = c.execute("SELECT version, applied_at FROM schema_migrations").fetchall()
-    assert [r["version"] for r in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert [r["version"] for r in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     assert ISO_UTC.match(rows[0]["applied_at"])
     assert migrate(c) == []
     c.close()

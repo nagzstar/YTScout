@@ -57,6 +57,18 @@ from ytscout.collect.discover import (
     worst_case_units,
 )
 from ytscout.collect.niches import NicheRefreshResult, collect_niches, tracked_niches
+from ytscout.collect.resume import (
+    KIND_COMPETITORS,
+    KIND_NICHES,
+    KIND_OWN,
+    KIND_VALIDATE,
+    Checkpoint,
+    done_keys,
+    iso_week,
+    open_checkpoint,
+    resume_hint,
+    validate_run_id,
+)
 from ytscout.collect.transcripts import DEFAULT_LIMIT as DEFAULT_TRANSCRIPT_LIMIT
 from ytscout.collect.transcripts import collect_transcripts
 from ytscout.dashboard import serve as serve_mod
@@ -224,7 +236,8 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument(
         "--resume",
         action="store_true",
-        help="continue an interrupted run from its checkpoint (issue 032; currently a no-op)",
+        help="--own/--competitors/--niches: skip what this ISO week's run already finished"
+        " (a quota stop's checkpoint); --analytics and --transcripts ignore it",
     )
     _add_quota_flags(collect)
     collect.set_defaults(func=cmd_collect)
@@ -345,6 +358,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="validate every proposed niche, oldest first, until the quota runs out",
     )
+    validate.add_argument(
+        "--resume",
+        action="store_true",
+        help="skip niches already validated in the last 10 days (their checkpoint)",
+    )
     _add_quota_flags(validate)
     validate.set_defaults(func=cmd_scout_validate)
     tag = scout_sub.add_parser(
@@ -445,6 +463,24 @@ def _require_quota_flag(args: argparse.Namespace, command: str) -> bool:
         file=sys.stderr,
     )
     return False
+
+
+def _print_resume(args: argparse.Namespace, checkpoint: Checkpoint, noun: str) -> None:
+    """What ``--resume`` skipped (or would skip, on a dry run)."""
+    if not args.resume:
+        return
+    verb = "would skip" if args.dry_run else "skipping"
+    if checkpoint.skipped:
+        print(
+            f"resume: {verb} {len(checkpoint.skipped)} {noun}(s) already done in"
+            f" {checkpoint.run_id}: {', '.join(checkpoint.skipped)}"
+        )
+    else:
+        print(f"resume: nothing done yet in {checkpoint.run_id}; running in full")
+
+
+def _print_resume_hint(args: argparse.Namespace) -> None:
+    print(resume_hint(getattr(args, "argv", None) or []), file=sys.stderr)
 
 
 # run_weekly.ps1 sets this to its log file so each step's ``runs`` row can point at it.
@@ -617,9 +653,14 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
     if args.niches:
         return _collect_niches(args, root, daily_cap, db_path, transport, shorts_max)
 
+    now = utc_now()
     if args.dry_run:
         conn = _dry_run_connection(db_path)
         try:
+            with _read_only(db_path) as real:
+                checkpoint = open_checkpoint(
+                    conn, KIND_OWN, iso_week(now), now, resume=args.resume, state=real
+                )
             ledger = Ledger(conn, daily_cap, run_cap=args.max_units, dry_run=True)
             counts = collect_own(
                 DataApi(ledger, transport),
@@ -627,10 +668,12 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
                 channel_id,
                 videos=args.videos,
                 shorts_max_seconds=shorts_max,
+                checkpoint=checkpoint,
             )
         finally:
             conn.close()
-        if isinstance(transport, DryRunTransport):
+        _print_resume(args, checkpoint, "channel")
+        if isinstance(transport, DryRunTransport) and not checkpoint.skipped:
             _print_plan(transport, args.videos)
         if counts.stopped is not None:
             print(f"a real run would stop here: {counts.stopped}", file=sys.stderr)
@@ -640,6 +683,7 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
     conn = connect(db_path)
     try:
         ledger = Ledger(conn, daily_cap, run_cap=args.max_units)
+        checkpoint = open_checkpoint(conn, KIND_OWN, iso_week(now), now, resume=args.resume)
         with recorded_run(conn, "collect_own") as run:
             try:
                 counts = collect_own(
@@ -648,6 +692,7 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
                     channel_id,
                     videos=args.videos,
                     shorts_max_seconds=shorts_max,
+                    checkpoint=checkpoint,
                 )
             except ChannelNotFound as exc:
                 run.status = "error"
@@ -655,11 +700,13 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
                 return EXIT_ERROR
             if counts.stopped is not None:
                 run.status = "quota_exhausted"
+        _print_resume(args, checkpoint, "channel")
         _print_summary(counts, ledger)
         if counts.stopped is not None:
             print(
                 f"stopped early; everything above is committed: {counts.stopped}", file=sys.stderr
             )
+            _print_resume_hint(args)
             return EXIT_QUOTA_EXHAUSTED
         return EXIT_OK
     finally:
@@ -965,11 +1012,15 @@ def _collect_competitors(
 ) -> int:
     """``collect --competitors``; exit 3 when a quota cap stops it (batches so far kept)."""
     now = utc_now()
+    run_id = iso_week(now)
     if args.dry_run:
-        with _read_only(db_path) as real:
-            channels = _tracked(real)
         conn = _dry_run_connection(db_path)
         try:
+            with _read_only(db_path) as real:
+                channels = _tracked(real)
+                checkpoint = open_checkpoint(
+                    conn, KIND_COMPETITORS, run_id, now, resume=args.resume, state=real
+                )
             ledger = Ledger(conn, daily_cap, run_cap=args.max_units, dry_run=True)
             result = collect_competitors(
                 DataApi(ledger, transport),
@@ -978,9 +1029,11 @@ def _collect_competitors(
                 own_channel_id=own_channel_id,
                 shorts_max_seconds=shorts_max,
                 now=now,
+                checkpoint=checkpoint,
             )
         finally:
             conn.close()
+        _print_resume(args, checkpoint, "channel")
         if isinstance(transport, DryRunTransport):
             _print_competitor_plan(result, transport)
         if result.stopped is not None:
@@ -991,6 +1044,7 @@ def _collect_competitors(
     conn = connect(db_path)
     try:
         ledger = Ledger(conn, daily_cap, run_cap=args.max_units)
+        checkpoint = open_checkpoint(conn, KIND_COMPETITORS, run_id, now, resume=args.resume)
         with recorded_run(conn, "collect_competitors") as run:
             result = collect_competitors(
                 DataApi(ledger, transport),
@@ -999,14 +1053,17 @@ def _collect_competitors(
                 own_channel_id=own_channel_id,
                 shorts_max_seconds=shorts_max,
                 now=now,
+                checkpoint=checkpoint,
             )
             if result.stopped is not None:
                 run.status = "quota_exhausted"
+        _print_resume(args, checkpoint, "channel")
         _print_competitor_summary(result, ledger)
         if result.stopped is not None:
             print(
                 f"stopped early; everything above is committed: {result.stopped}", file=sys.stderr
             )
+            _print_resume_hint(args)
             return EXIT_QUOTA_EXHAUSTED
         return EXIT_OK
     finally:
@@ -1046,17 +1103,27 @@ def _collect_niches(
     """``collect --niches``, then ``score`` for the niches it finished. Exit 3 on a quota
     stop (finished niches committed and scored), 1 if the re-score cannot load its config."""
     now = utc_now()
+    run_id = iso_week(now)
     if args.dry_run:
-        with _read_only(db_path) as real:
-            niches = _tracked_niches(real)
         conn = _dry_run_connection(db_path)
         try:
+            with _read_only(db_path) as real:
+                niches = _tracked_niches(real)
+                checkpoint = open_checkpoint(
+                    conn, KIND_NICHES, run_id, now, resume=args.resume, state=real
+                )
             ledger = Ledger(conn, daily_cap, run_cap=args.max_units, dry_run=True)
             result = collect_niches(
-                DataApi(ledger, transport), conn, niches, shorts_max_seconds=shorts_max, now=now
+                DataApi(ledger, transport),
+                conn,
+                niches,
+                shorts_max_seconds=shorts_max,
+                now=now,
+                checkpoint=checkpoint,
             )
         finally:
             conn.close()
+        _print_resume(args, checkpoint, "niche")
         print("dry run: planned YouTube Data API calls (nothing is sent, nothing is written)")
         _print_niche_units(result)
         units = transport.units if isinstance(transport, DryRunTransport) else ledger.run_used
@@ -1074,6 +1141,7 @@ def _collect_niches(
     conn = connect(db_path)
     try:
         ledger = Ledger(conn, daily_cap, run_cap=args.max_units)
+        checkpoint = open_checkpoint(conn, KIND_NICHES, run_id, now, resume=args.resume)
         with recorded_run(conn, "collect_niches") as run:
             result = collect_niches(
                 DataApi(ledger, transport),
@@ -1081,9 +1149,11 @@ def _collect_niches(
                 tracked_niches(conn),
                 shorts_max_seconds=shorts_max,
                 now=now,
+                checkpoint=checkpoint,
             )
             if result.stopped is not None:
                 run.status = "quota_exhausted"
+        _print_resume(args, checkpoint, "niche")
         _print_niche_units(result)
         c = result.counts
         print(
@@ -1104,6 +1174,7 @@ def _collect_niches(
                 f"stopped early; finished niches are committed and scored: {result.stopped}",
                 file=sys.stderr,
             )
+            _print_resume_hint(args)
             return EXIT_QUOTA_EXHAUSTED
         return code
     finally:
@@ -1845,6 +1916,15 @@ def _print_validate_plan(
     )
 
 
+def _print_validate_skips(niche_ids: Sequence[int], *, dry_run: bool) -> None:
+    verb = "would skip" if dry_run else "skipping"
+    if niche_ids:
+        ids = ", ".join(str(i) for i in niche_ids)
+        print(f"resume: {verb} niche(s) validated in the last 10 days: {ids}")
+    else:
+        print("resume: no niche here was validated in the last 10 days")
+
+
 def cmd_scout_validate(args: argparse.Namespace, _extras: list[str]) -> int:
     """``scout validate``: searches → channels → one uploads page + videos per channel.
 
@@ -1883,6 +1963,15 @@ def cmd_scout_validate(args: argparse.Namespace, _extras: list[str]) -> int:
             if isinstance(targets, str):
                 print(f"scout validate: {targets}", file=sys.stderr)
                 return EXIT_ERROR
+            if args.resume:
+                now = utc_now()
+                done = [
+                    n
+                    for n in targets
+                    if done_keys(copy, KIND_VALIDATE, validate_run_id(n["id"]), now)
+                ]
+                _print_validate_skips([int(n["id"]) for n in done], dry_run=True)
+                targets = [n for n in targets if n not in done]
             _print_validate_plan(targets, cfg, ledger)
         finally:
             copy.close()
@@ -1911,9 +2000,12 @@ def cmd_scout_validate(args: argparse.Namespace, _extras: list[str]) -> int:
                 cfg=cfg,
                 shorts_max_seconds=shorts_max,
                 now=utc_now(),
+                resume=args.resume,
             )
             if result.stopped is not None:
                 run.status = "quota_exhausted"
+        if args.resume:
+            _print_validate_skips(result.skipped, dry_run=False)
         for report in result.reports:
             print(scout_validate.format_report(report))
         print(
@@ -1933,6 +2025,7 @@ def cmd_scout_validate(args: argparse.Namespace, _extras: list[str]) -> int:
                     f"stopped early; finished niches are committed: {result.stopped}",
                     file=sys.stderr,
                 )
+            _print_resume_hint(args)
             return EXIT_QUOTA_EXHAUSTED
         return EXIT_OK
     finally:
@@ -2209,6 +2302,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args, extras = parser.parse_known_args(argv)
     if extras and not getattr(args, "stub", False):
         parser.error(f"unrecognized arguments: {' '.join(extras)}")
+    # The exact command, for the `resume with:` line a quota stop prints (032).
+    args.argv = list(sys.argv[1:] if argv is None else argv)
     try:
         return int(args.func(args, extras))
     except tls.TlsError as exc:

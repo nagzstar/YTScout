@@ -103,8 +103,9 @@ def test_collect_own_without_max_units_refuses_via_subprocess(tmp_path: Path) ->
     assert "--max-units" in result.stderr
 
 
-def test_collect_accepts_resume_as_a_no_op_flag() -> None:
-    """run_weekly.ps1 -Resume passes --resume to collectors; it must parse before 032."""
+def test_collect_accepts_resume() -> None:
+    """run_weekly.ps1 -Resume passes --resume to every collector, including the ones that
+    ignore it (--analytics, --transcripts)."""
     from ytscout.cli import build_parser
 
     args = build_parser().parse_args(["collect", "--own", "--resume", "--dry-run"])
