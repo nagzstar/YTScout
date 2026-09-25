@@ -34,3 +34,22 @@ in 009 forgot at least once.
 ## Notes
 
 Complaints are listed in the 009 Outcome.
+
+## Outcome (closed 2026-09-25)
+
+**Delivered:**
+- Hits column header now carries `title="Search hits: how many discovery results pointed at this channel"` in the rendered HTML (verified by test in test_dashboard.py)
+- serve now calls rebuild() on every GET request, so editing templates and refreshing shows the change immediately (verified by test in test_serve.py)
+- serve --help updated to state: "templates reload on refresh, Python code changes need restart"
+
+**Verification:**
+- ✓ Added assertion in test_dashboard.py::test_candidates_sorted_by_score_and_approved_split to check tooltip is rendered
+- ✓ Added test_serve.py::test_get_rebuilds_dashboard_on_every_request to verify GET rebuilds
+- ✓ All 532 tests pass
+- ✓ Help text shows new message
+- ✓ ruff format and ruff check pass
+
+**Decisions:**
+- Only added tooltip to "Hits" column; other headers (Channel, Status, Subscribers, Why suggested, Review) are self-explanatory
+- rebuild() on GET is wrapped in try/except so template errors don't prevent serving the existing cached dashboard
+- No live reload of Python code (out of scope); requires manual restart as noted in help text
