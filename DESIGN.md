@@ -124,7 +124,7 @@ Generate candidate niches, validate them with real data, and rank them by £ per
 Two feeds, merged and de-duplicated:
 
 1. **LLM brainstorm** — Claude proposes candidate `format × topic` niches from a prompt that includes: the pipeline's capabilities (§6.4), constraints (faceless, English-language, evergreen preferred), and a list of niches already scored (so it explores rather than repeats). Output is a fixed schema: `{format, topic, example_search_queries[3], why_ai_able, suspected_manual_steps[]}`.
-2. **Snowball** — from every approved competitor and every channel found in a validated niche, follow `search.list` on their top titles and `channels.list` on co-occurring channels to find adjacent niches.
+2. **Snowball** — from every approved competitor and every channel found in a validated niche, follow `search.list` on their top titles and `channels.list` on co-occurring channels to find adjacent niches. As built (026, `scout snowball`): sources are approved competitors and channels of *tracking* niches, one query per top-3 title, ≤ 15 searches (default 10, worst case 1,014 units), new channels with ≥ 3 hits clustered by title words (Jaccard ≥ 0.3, single linkage, ≥ 3 channels); each cluster becomes a `proposed` niche with its channel ids in `niches.seed_json` (migration 0008).
 
 Nagz can add seeds by hand in `config/seed_niches.yaml`.
 

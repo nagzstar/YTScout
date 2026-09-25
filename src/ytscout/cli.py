@@ -71,6 +71,7 @@ from ytscout.scoring import (
 from ytscout.scoring.metrics import FORMATS
 from ytscout.scout import propose as scout_propose
 from ytscout.scout import score as scout_score
+from ytscout.scout import snowball as scout_snowball
 from ytscout.scout import tag as scout_tag
 from ytscout.scout import validate as scout_validate
 from ytscout.settings import (
@@ -121,7 +122,6 @@ STUBS: dict[str, tuple[str, str]] = {}
 
 # scout subcommand -> (help text, issue that delivers it); these exit 2 until then.
 SCOUT_STUBS: dict[str, tuple[str, str]] = {
-    "snowball": ("find adjacent niches from known channels", "026"),
     "sensitivity": ("re-score five niches under threshold changes", "028"),
 }
 
@@ -349,6 +349,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="show which niches would be tagged in which batches; call nothing, write nothing",
     )
     tag.set_defaults(func=cmd_scout_tag)
+    snowball = scout_sub.add_parser(
+        "snowball",
+        help="propose adjacent niches from known channels' top titles (100 units per search)",
+    )
+    snowball.add_argument(
+        "--max-searches",
+        type=_positive_int,
+        default=scout_snowball.DEFAULT_MAX_SEARCHES,
+        help=f"search.list calls at most (default {scout_snowball.DEFAULT_MAX_SEARCHES},"
+        f" refused above {scout_snowball.MAX_SEARCHES_CAP})",
+    )
+    _add_quota_flags(snowball)
+    snowball.set_defaults(func=cmd_scout_snowball)
     for name, (help_text, issue) in SCOUT_STUBS.items():
         stub = scout_sub.add_parser(name, help=f"{help_text} (issue {issue})")
         stub.set_defaults(func=_make_stub(f"scout {name}", issue), stub=True)
@@ -1778,6 +1791,132 @@ def cmd_scout_validate(args: argparse.Namespace, _extras: list[str]) -> int:
                     f"stopped early; finished niches are committed: {result.stopped}",
                     file=sys.stderr,
                 )
+            return EXIT_QUOTA_EXHAUSTED
+        return EXIT_OK
+    finally:
+        conn.close()
+
+
+def _print_snowball_plan(queries: Sequence[scout_snowball.PlannedQuery], ledger: Ledger) -> None:
+    print("dry run: planned YouTube Data API calls (nothing is sent, nothing is written)")
+    for planned in queries:
+        print(
+            f"  search.list q={planned.query!r} order=viewCount"
+            f" (from video {planned.source_video} of {planned.source_channel}) - 100 units"
+        )
+    n = len(queries)
+    units = scout_snowball.worst_case_units(n)
+    print(
+        f"then channels.list on channels with >= {scout_snowball.MIN_HITS} hits and"
+        " videos.list on the clusters' hit videos (1 unit per 50 ids)"
+    )
+    left = scout_snowball.headroom(ledger)
+    fits = scout_snowball.searches_within(left, n)
+    print(
+        f"planned: {n} search(es), estimate <= {units} units; {fits} fit in the"
+        f" {left} units left under the caps"
+    )
+
+
+def cmd_scout_snowball(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``scout snowball``: known channels' top titles → searches → clusters → proposals.
+
+    Exit 3 when a quota cap stops the run; nothing is written then.
+    """
+    if args.max_searches > scout_snowball.MAX_SEARCHES_CAP:
+        print(
+            f"scout snowball: --max-searches {args.max_searches} is above"
+            f" {scout_snowball.MAX_SEARCHES_CAP} ({scout_snowball.MAX_SEARCHES_CAP * 100}"
+            " search units); refusing",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    if not _require_quota_flag(args, "scout snowball"):
+        return EXIT_ERROR
+    root = find_repo_root()
+    settings: Settings | None
+    try:
+        settings = load(repo_root=root)
+    except SettingsMissing as exc:
+        if not args.dry_run:
+            print(f"scout snowball: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"note: {exc.path} not found; using the default data directory")
+        settings = None
+    except SettingsError as exc:
+        print(f"scout snowball: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        scoring = load_scoring(root / SCORING_RELPATH)
+        shorts_max = shorts_max_seconds(scoring)
+        cfg = validation_config(scoring)
+    except ScoringConfigError as exc:
+        print(f"scout snowball: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    daily_cap = settings.quota.daily_cap if settings else DEFAULT_QUOTA_DAILY_CAP
+    db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+
+    if args.dry_run:
+        copy = read_copy(db_path)
+        try:
+            queries = scout_snowball.plan_queries(copy, args.max_searches)
+            ledger = Ledger(copy, daily_cap, run_cap=args.max_units, dry_run=True)
+            _print_snowball_plan(queries, ledger)
+        finally:
+            copy.close()
+        return EXIT_OK
+
+    try:
+        transport = make_transport(settings, False)
+    except ValueError as exc:
+        print(f"scout snowball: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    conn = connect(db_path)
+    try:
+        queries = scout_snowball.plan_queries(conn, args.max_searches)
+        if not queries:
+            print(
+                "scout snowball: no new queries (approve competitors or track a niche first,"
+                " or every query is already used by a niche)"
+            )
+            return EXIT_OK
+        ledger = Ledger(conn, daily_cap, run_cap=args.max_units)
+        fits = scout_snowball.searches_within(scout_snowball.headroom(ledger), len(queries))
+        if fits == 0:
+            need = scout_snowball.worst_case_units(1)
+            print(
+                f"scout snowball: one search needs up to {need} units and fewer are left"
+                " under --max-units or today's cap",
+                file=sys.stderr,
+            )
+            return EXIT_QUOTA_EXHAUSTED
+        if fits < len(queries):
+            print(f"note: the unit caps allow {fits} of {len(queries)} searches")
+            queries = queries[:fits]
+        with recorded_run(conn, "scout_snowball") as run:
+            result = scout_snowball.snowball(
+                DataApi(ledger, transport),
+                conn,
+                queries,
+                lookback_days=cfg.lookback_days,
+                language=cfg.language,
+                shorts_max_seconds=shorts_max,
+                now=utc_now(),
+            )
+            if result.stopped is not None:
+                run.status = "quota_exhausted"
+        for niche_id, proposal in result.added:
+            print(scout_snowball.format_proposal(niche_id, proposal))
+        for proposal, reason in result.skipped:
+            print(f"skipped: {scout_snowball.format_proposal(None, proposal)} ({reason})")
+        print(
+            f"scout snowball: {result.searches} searches, {result.candidate_channels} new"
+            f" channels, {result.kept_channels} with >= {scout_snowball.MIN_HITS} hits,"
+            f" {result.clusters} cluster(s), {len(result.added)} niche(s) proposed;"
+            f" units this run {ledger.run_used}, units today {ledger.used_today()}"
+        )
+        if result.stopped is not None:
+            print(f"stopped early; nothing was written: {result.stopped}", file=sys.stderr)
             return EXIT_QUOTA_EXHAUSTED
         return EXIT_OK
     finally:

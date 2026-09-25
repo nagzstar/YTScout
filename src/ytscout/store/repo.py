@@ -671,6 +671,7 @@ def insert_niche(
     meta: dict | None = None,
     status: str = NICHE_STATUS_PROPOSED,
     created_at: str | datetime | None = None,
+    seed_channel_ids: Sequence[str] | None = None,
 ) -> int:
     """Insert one ``niches`` row and return its id.
 
@@ -683,8 +684,8 @@ def insert_niche(
         raise ValueError(f"source must be one of {NICHE_SOURCES}, got {source!r}")
     cur = conn.execute(
         "INSERT INTO niches (format, topic, topic_category, label, status, source, created_at,"
-        " queries_json, required_steps_json, meta_json)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " queries_json, required_steps_json, meta_json, seed_json)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             fmt,
             topic,
@@ -696,6 +697,7 @@ def insert_niche(
             json.dumps(list(queries), ensure_ascii=False),
             json.dumps(list(required_steps), ensure_ascii=False),
             None if meta is None else json.dumps(meta, ensure_ascii=False, sort_keys=True),
+            None if seed_channel_ids is None else json.dumps(list(seed_channel_ids)),
         ),
     )
     return int(cur.lastrowid or 0)
@@ -711,6 +713,8 @@ def get_niche(conn: sqlite3.Connection, niche_id: int) -> sqlite3.Row | None:
 
 
 NICHE_STATUS_VALIDATED = "validated"
+# The dashboard stores the decision as ``track``; DESIGN.md §5.4 calls the state tracking.
+NICHE_STATUSES_TRACKING = ("track", "tracking")
 
 
 def proposed_niches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -893,3 +897,57 @@ def own_rpm_rows(conn: sqlite3.Connection, since: str) -> list[sqlite3.Row]:
         """,
         (since,),
     ).fetchall()
+
+
+# --- snowball (026) -------------------------------------------------------------------------
+
+
+def snowball_sources(conn: sqlite3.Connection) -> list[tuple[str, int | None]]:
+    """``(channel_id, niche_id)``: every approved competitor (``niche_id`` None), then every
+    channel of a tracking niche, oldest niche first. A channel appears once, first wins."""
+    rows = conn.execute(
+        "SELECT id AS channel_id, NULL AS niche_id FROM channels"
+        " WHERE role = 'competitor' AND status = 'approved'"
+        " ORDER BY title, id"
+    ).fetchall()
+    marks = ", ".join("?" * len(NICHE_STATUSES_TRACKING))
+    rows += conn.execute(
+        "SELECT nc.channel_id, nc.niche_id FROM niche_channels nc"
+        " JOIN niches n ON n.id = nc.niche_id"
+        f" WHERE n.status IN ({marks}) ORDER BY n.id, nc.channel_id",
+        NICHE_STATUSES_TRACKING,
+    ).fetchall()
+    seen: dict[str, int | None] = {}
+    for row in rows:
+        seen.setdefault(row["channel_id"], row["niche_id"])
+    return list(seen.items())
+
+
+def top_videos_by_views(
+    conn: sqlite3.Connection, channel_id: str, limit: int
+) -> list[tuple[str, str, int]]:
+    """``(video_id, title, views)`` of the channel's ``limit`` most-viewed videos, by each
+    video's latest snapshot. Videos without a title or a snapshot are skipped."""
+    rows = conn.execute(
+        "SELECT v.id, v.title, s.views FROM videos v"
+        " JOIN video_snapshots s ON s.video_id = v.id"
+        " WHERE v.channel_id = ? AND v.title IS NOT NULL AND s.views IS NOT NULL"
+        " AND s.captured_at = (SELECT MAX(captured_at) FROM video_snapshots"
+        "                      WHERE video_id = v.id)"
+        " GROUP BY v.id ORDER BY s.views DESC, v.id LIMIT ?",
+        (channel_id, limit),
+    ).fetchall()
+    return [(r["id"], r["title"], int(r["views"])) for r in rows]
+
+
+def niche_channel_ids(conn: sqlite3.Connection) -> set[str]:
+    """Every channel linked to any niche."""
+    return {r[0] for r in conn.execute("SELECT DISTINCT channel_id FROM niche_channels")}
+
+
+def used_niche_queries(conn: sqlite3.Connection) -> list[str]:
+    """Every search query stored on any niche, as written."""
+    out: list[str] = []
+    for (raw,) in conn.execute("SELECT queries_json FROM niches WHERE queries_json IS NOT NULL"):
+        out += [q for q in json.loads(raw) if isinstance(q, str)]
+    return out

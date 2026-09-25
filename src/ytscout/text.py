@@ -123,3 +123,30 @@ def seed_queries(titles: Sequence[str], keywords: Sequence[str], max_queries: in
 def query_terms(queries: Iterable[str]) -> set[str]:
     """The distinct content words across ``queries`` (the ``top 5`` prefix drops out)."""
     return {word for query in queries for word in tokens(query)}
+
+
+_TOP_FIVE = re.compile(r"\btop\s*(?:5|five)\b")
+SNOWBALL_WORDS = 2
+
+
+def snowball_query(title: str) -> str | None:
+    """One source video title → one ``scout snowball`` query (issue 026).
+
+    The two most frequent content words of ``tokens(title)`` (ties by first sighting), led
+    by ``top 5`` when the title had it: ``"Top 5 Deadliest Snakes Ever"`` →
+    ``"top 5 deadliest snakes"``. ``None`` when nothing is left after stripping.
+    """
+    words = tokens(title)
+    if not words:
+        return None
+    counts = Counter(words)
+    first = {w: i for i, w in reversed(list(enumerate(words)))}
+    kept = sorted(counts, key=lambda w: (-counts[w], first[w]))[:SNOWBALL_WORDS]
+    kept.sort(key=lambda w: first[w])
+    prefix = QUERY_PREFIX if _TOP_FIVE.search(html.unescape(title).lower()) else ""
+    return prefix + " ".join(kept)
+
+
+def normalise_query(query: str) -> str:
+    """Lower-cased, whitespace collapsed: the form queries are compared in."""
+    return " ".join(query.lower().split())
