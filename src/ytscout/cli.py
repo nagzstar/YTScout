@@ -283,7 +283,9 @@ def build_parser() -> argparse.ArgumentParser:
     dash.set_defaults(func=cmd_dashboard)
 
     serve = sub.add_parser(
-        "serve", help="localhost review server: approve/reject/watch from the dashboard"
+        "serve",
+        help="localhost review server: approve/reject/watch from the dashboard; "
+        "templates reload on refresh, Python code changes need restart",
     )
     serve.add_argument(
         "--port",

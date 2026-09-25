@@ -111,6 +111,10 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if self.path.split("?", 1)[0] == "/health":
             self._json(HTTPStatus.OK, {"ok": True, "db": str(self.server.db_path)})
             return
+        try:
+            self.server.rebuild()
+        except Exception:  # noqa: BLE001 - rebuild failures are not fatal for static page serving
+            pass
         super().do_GET()
 
     def do_POST(self) -> None:  # noqa: N802 - http.server naming

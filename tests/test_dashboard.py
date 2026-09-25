@@ -166,6 +166,10 @@ def test_candidates_sorted_by_score_and_approved_split(seeded: Path, tmp_path: P
     assert 'data-id="UCcand1" data-decision="approved"' in html
     assert 'id="serve-note"' in html
     assert "http://127.0.0.1:8765/" in html
+    # 037: Hits column header has a tooltip
+    assert (
+        'title="Search hits: how many discovery results pointed at this channel">Hits</th>' in html
+    )
 
 
 def test_empty_db_renders_nothing_yet(tmp_path: Path) -> None:

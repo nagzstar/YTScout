@@ -268,3 +268,19 @@ def test_undecided_returns_a_channel_to_candidates(
     assert rows == [("UCa", "approved"), ("UCa", "undecided")]
     lines = (tmp_path / "data" / "decisions.json").read_text(encoding="utf-8").splitlines()
     assert [json.loads(line)["decision"] for line in lines] == ["approved", "undecided"]
+
+
+def test_get_rebuilds_dashboard_on_every_request(server: ReviewServer, tmp_path: Path) -> None:
+    index = tmp_path / "dashboard" / "index.html"
+    before = index.stat().st_mtime_ns
+    os.utime(index, ns=(before - 10**9, before - 10**9))  # so a rebuild visibly advances it
+    before = index.stat().st_mtime_ns
+
+    conn = http.client.HTTPConnection(HOST, server.server_address[1], timeout=10)
+    try:
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        assert resp.status == 200
+    finally:
+        conn.close()
+    assert index.stat().st_mtime_ns > before
