@@ -101,6 +101,8 @@ if (-not (Test-Path $Python)) {
 }
 
 $env:PYTHONIOENCODING = 'utf-8'
+# Each step's `runs` row records this log's path; the dashboard shows the latest (031).
+$env:YTSCOUT_RUN_LOG = $LogFile
 $quotaHit = $false
 $failed = $false
 

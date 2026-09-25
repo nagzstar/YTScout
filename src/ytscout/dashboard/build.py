@@ -13,7 +13,7 @@ import math
 import re
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,12 @@ TEMPLATES_DIR = PACKAGE_DIR / "templates"
 CHARTJS_PATH = PACKAGE_DIR / "static" / "chart.umd.js"
 DEFAULT_OUT_RELPATH = Path("dashboard") / "index.html"
 OWN_VIDEOS_SHOWN = 20
+RUNS_SHOWN = 10
+UNITS_CHART_DAYS = 14
+STALE_AFTER_DAYS = 8
+# run_weekly.ps1 names its log weekly-YYYYMMDD-HHMM.log; runs rows carrying such a path
+# are the weekly job's steps.
+WEEKLY_LOG_MARK = "weekly-"
 CHART_MONTHS = 12
 # At most 8 lines (the validated categorical palette); past that the smallest channels
 # fold into one "Other" line.
@@ -77,6 +83,9 @@ class Dashboard:
     # Niches with no niche_scores row yet (proposed, validated): the "waiting" table.
     niches_waiting: list[dict[str, Any]] = field(default_factory=list)
     niche_counts: dict[str, int] = field(default_factory=dict)
+    # The Runs section (031): recent rows, this week's totals, units by day, pending
+    # analyses, the health banner's reasons and the latest weekly log path.
+    runs: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -206,6 +215,7 @@ def load(
     _load_metrics(conn, dash, moment)
     _load_findings(conn, dash)
     _load_niches(conn, dash, context or NicheContext())
+    dash.runs = load_runs(conn, moment)
     return dash
 
 
@@ -452,6 +462,116 @@ def _load_niches(conn: sqlite3.Connection, dash: Dashboard, context: NicheContex
         "scored": sum(len(r) for r in tables.values()),
         "tracking": sum(1 for n in niches if n["status"] in NICHE_TRACKING),
         "shelved": sum(1 for n in niches if n["status"] in NICHE_SHELVED),
+    }
+
+
+# --- runs (031) ----------------------------------------------------------------------------
+
+_RUN_COLUMNS = (
+    "id, kind, started_at, finished_at, status, log_path, units_used, claude_calls,"
+    " claude_input_tokens, claude_output_tokens, claude_cost_usd_est, error_tail"
+)
+_TOTALS = ("units_used", "claude_calls", "claude_input_tokens", "claude_output_tokens")
+
+
+def _parse(timestamp: Any) -> datetime | None:
+    try:
+        return parse_dt(str(timestamp)) if timestamp else None
+    except ValueError:
+        return None
+
+
+def _seconds(row: dict[str, Any]) -> float | None:
+    start, end = _parse(row.get("started_at")), _parse(row.get("finished_at"))
+    return None if start is None or end is None else max(0.0, (end - start).total_seconds())
+
+
+def _sum(rows: list[dict[str, Any]], key: str) -> int | float | None:
+    """Sum of the non-null ``key`` values; ``None`` when every row is null."""
+    values = [r[key] for r in rows if r.get(key) is not None]
+    return sum(values) if values else None
+
+
+def _is_weekly(row: dict[str, Any]) -> bool:
+    return WEEKLY_LOG_MARK in Path(str(row.get("log_path") or "")).name
+
+
+def week_start(now: datetime) -> datetime:
+    """Monday 00:00 UTC of the week containing ``now``."""
+    day = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    return day - timedelta(days=day.weekday())
+
+
+def run_health(rows: list[dict[str, Any]], now: datetime) -> list[str]:
+    """Why the Runs banner is red; empty when the job looks healthy.
+
+    ``rows`` are all runs, newest first. The newest *weekly* run is every row sharing the
+    newest weekly log path (one per step of run_weekly.ps1); with no weekly rows at all,
+    the newest run of any kind stands in. Red when any of those rows is not ``ok`` or when
+    it started more than ``STALE_AFTER_DAYS`` ago (or nothing ever ran).
+    """
+    weekly = [r for r in rows if _is_weekly(r)]
+    if weekly:
+        latest = [r for r in weekly if r["log_path"] == weekly[0]["log_path"]]
+        label = "the newest weekly run"
+    else:
+        latest = rows[:1]
+        label = "the newest run"
+    reasons: list[str] = []
+    bad = [r for r in latest if r.get("status") != "ok"]
+    if bad:
+        steps = ", ".join(f"{r['kind']} {r.get('status') or 'unfinished'}" for r in bad)
+        reasons.append(f"{label} did not finish ok: {steps}")
+    started = [t for t in (_parse(r.get("started_at")) for r in latest) if t is not None]
+    if not started or now - max(started) > timedelta(days=STALE_AFTER_DAYS):
+        reasons.append(f"no run in the last {STALE_AFTER_DAYS} days")
+    return reasons
+
+
+def pending_analyses(conn: sqlite3.Connection) -> int:
+    """Competitor analyses stored ``pending`` (claude unavailable) since the last ok one."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM competitor_analyses WHERE status = 'pending' AND id >"
+        " COALESCE((SELECT MAX(id) FROM competitor_analyses WHERE status = 'ok'), 0)"
+    ).fetchone()
+    return int(row[0])
+
+
+def units_by_day(conn: sqlite3.Connection, now: datetime) -> dict[str, list[Any]]:
+    """Ledger units per Pacific day, oldest first, ``UNITS_CHART_DAYS`` days ending today."""
+    today = today_pacific(now)
+    days = [(today - timedelta(days=n)).isoformat() for n in range(UNITS_CHART_DAYS - 1, -1, -1)]
+    used = dict(
+        conn.execute(
+            "SELECT day_pacific, units_used FROM quota_ledger WHERE day_pacific >= ?",
+            (days[0],),
+        ).fetchall()
+    )
+    return {"labels": days, "units": [int(used.get(d, 0)) for d in days]}
+
+
+def load_runs(conn: sqlite3.Connection, now: datetime) -> dict[str, Any]:
+    """Everything the Runs section shows."""
+    rows = _rows(conn, f"SELECT {_RUN_COLUMNS} FROM runs ORDER BY started_at DESC, id DESC")
+    for row in rows:
+        row["duration_s"] = _seconds(row)
+        tokens = [row["claude_input_tokens"], row["claude_output_tokens"]]
+        row["tokens"] = None if tokens == [None, None] else sum(t or 0 for t in tokens)
+    since = week_start(now)
+    week = [r for r in rows if (t := _parse(r["started_at"])) is not None and t >= since]
+    totals: dict[str, Any] = {key: _sum(week, key) for key in _TOTALS}
+    totals["claude_cost_usd_est"] = _sum(week, "claude_cost_usd_est")
+    totals["runs"] = len(week)
+    totals["not_ok"] = sum(1 for r in week if r.get("finished_at") and r.get("status") != "ok")
+    totals["since"] = to_utc_iso(since)
+    log = next((r["log_path"] for r in rows if r.get("log_path")), None)
+    return {
+        "recent": rows[:RUNS_SHOWN],
+        "week": totals,
+        "units_by_day": units_by_day(conn, now),
+        "pending": pending_analyses(conn),
+        "banner": run_health(rows, now),
+        "log_path": log,
     }
 
 

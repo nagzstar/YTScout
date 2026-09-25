@@ -291,6 +291,12 @@ def quota_used(conn: sqlite3.Connection, day_pacific: str) -> int:
     return int(row[0]) if row else 0
 
 
+def quota_total(conn: sqlite3.Connection) -> int:
+    """Units charged over every day in the ledger (a run may cross Pacific midnight)."""
+    row = conn.execute("SELECT COALESCE(SUM(units_used), 0) FROM quota_ledger").fetchone()
+    return int(row[0])
+
+
 def add_quota_used(conn: sqlite3.Connection, day_pacific: str, units: int) -> None:
     """Add ``units`` to the day's total, creating the row if needed."""
     conn.execute(
@@ -445,16 +451,43 @@ def get_transcripts(conn: sqlite3.Connection, video_id: str) -> list[sqlite3.Row
 # --- runs ---------------------------------------------------------------------------------
 
 
-def start_run(conn: sqlite3.Connection, kind: str) -> int:
+def start_run(conn: sqlite3.Connection, kind: str, log_path: str | None = None) -> int:
     """Insert a ``runs`` row started now; return its id."""
-    cur = conn.execute("INSERT INTO runs (started_at, kind) VALUES (?, ?)", (now_utc(), kind))
+    cur = conn.execute(
+        "INSERT INTO runs (started_at, kind, log_path) VALUES (?, ?, ?)",
+        (now_utc(), kind, log_path),
+    )
     return int(cur.lastrowid or 0)
 
 
-def finish_run(conn: sqlite3.Connection, run_id: int, status: str) -> None:
-    """Stamp a ``runs`` row with ``finished_at`` = now and ``status``."""
+def finish_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    status: str,
+    *,
+    units_used: int | None = None,
+    claude_calls: int | None = None,
+    claude_input_tokens: int | None = None,
+    claude_output_tokens: int | None = None,
+    claude_cost_usd_est: float | None = None,
+    error_tail: str | None = None,
+) -> None:
+    """Stamp a ``runs`` row with ``finished_at`` = now, ``status`` and what it spent."""
     conn.execute(
-        "UPDATE runs SET finished_at = ?, status = ? WHERE id = ?", (now_utc(), status, run_id)
+        "UPDATE runs SET finished_at = ?, status = ?, units_used = ?, claude_calls = ?,"
+        " claude_input_tokens = ?, claude_output_tokens = ?, claude_cost_usd_est = ?,"
+        " error_tail = ? WHERE id = ?",
+        (
+            now_utc(),
+            status,
+            units_used,
+            claude_calls,
+            claude_input_tokens,
+            claude_output_tokens,
+            claude_cost_usd_est,
+            error_tail,
+            run_id,
+        ),
     )
 
 

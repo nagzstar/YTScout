@@ -96,6 +96,10 @@ ul.sample-channels { margin: 0; padding-left: 18px; }
 .cov-automated { color: var(--series-6); }
 .cov-manual { color: var(--series-8); }
 .waiting table { color: var(--muted); }
+.banner { background: var(--series-8); color: #fff; border-radius: 6px; padding: 8px 12px; margin: 12px 0; }
+.banner a { color: #fff; }
+.status-bad { color: var(--series-8); font-weight: 600; }
+pre { white-space: pre-wrap; font-size: 12px; }
 footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(--muted); font-size: 13px; }
 </style>
 </head>
@@ -127,6 +131,9 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
   </nav>
 </header>
 <main>
+{% if d.runs.banner %}
+<div class="banner" id="runs-banner" role="alert"><strong>Needs attention:</strong> {{ d.runs.banner | join("; ") }}. <a href="#runs">See Runs</a>.</div>
+{% endif %}
 {% include "own.html.j2" %}
 {% include "competitors.html.j2" %}
 {% include "niches.html.j2" %}
@@ -169,6 +176,36 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
       scales: {
         x: { ticks: { color: muted, maxTicksLimit: 8 }, grid: { color: line } },
         y: { ticks: { color: muted }, grid: { color: line } }
+      }
+    }
+  });
+})();
+</script>
+<script>
+(function () {
+  "use strict";
+  // Units by Pacific day (031): one bar per day, zero days included.
+  var el = document.getElementById("units-data");
+  var canvas = document.getElementById("units-chart");
+  if (!el || !canvas || typeof Chart === "undefined") { return; }
+  var data = JSON.parse(el.textContent);
+  var css = getComputedStyle(document.documentElement);
+  var accent = css.getPropertyValue("--accent").trim();
+  var muted = css.getPropertyValue("--muted").trim();
+  var line = css.getPropertyValue("--line").trim();
+  new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: data.labels.map(function (d) { return d.slice(5); }),
+      datasets: [{ label: "Units", data: data.units, backgroundColor: accent, borderRadius: 2 }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: muted }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: muted }, grid: { color: line } }
       }
     }
   });

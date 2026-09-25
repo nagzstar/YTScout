@@ -14,6 +14,9 @@ a stray shell export cannot switch the call over to pay-per-token billing.
 The packet travels by path, never on stdin. Stdout is one JSON object whose
 ``structured_output`` must validate against the schema; anything else raises
 ``ClaudeUnavailable`` so the caller can store nothing and exit 5.
+
+Every call is also counted in the module-level ``USAGE`` (calls, tokens, the CLI's cost
+estimate), which ``cli.recorded_run`` diffs to stamp each ``runs`` row (031).
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from ytscout.settings import find_repo_root
@@ -66,6 +69,65 @@ class RunResult:
     prompt_hash: str = ""
     schema_hash: str = ""
     duration_s: float = 0.0
+
+
+# The token fields of ``usage`` that count as input: fresh, cache-written and cache-read.
+_INPUT_TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def _add(total: float | None, value: float | None) -> float | None:
+    """Null-aware sum: ``None`` only while nothing has been reported."""
+    if value is None:
+        return total
+    return value if total is None else total + value
+
+
+def _tokens(usage: dict, keys: tuple[str, ...]) -> int | None:
+    """The sum of the integer ``keys`` present in ``usage``; ``None`` when none are."""
+    found = [usage[k] for k in keys if isinstance(usage.get(k), int) and usage[k] >= 0]
+    return sum(found) if found else None
+
+
+@dataclass
+class Usage:
+    """What ``claude -p`` calls in this process reported.
+
+    ``calls`` counts every started call, failed ones included. Token counts and
+    ``cost_usd_est`` stay ``None`` until a call reports them: a Claude Code version that
+    leaves a field out is stored as unknown, never as 0. ``cost_usd_est`` is the CLI's own
+    ``total_cost_usd`` estimate: informational only on a subscription, nothing is billed.
+    """
+
+    calls: int = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd_est: float | None = None
+
+    def record(self, usage: dict, cost: float | None) -> None:
+        self.input_tokens = _add(self.input_tokens, _tokens(usage, _INPUT_TOKEN_KEYS))
+        self.output_tokens = _add(self.output_tokens, _tokens(usage, ("output_tokens",)))
+        self.cost_usd_est = _add(self.cost_usd_est, cost)
+
+    def since(self, before: Usage) -> Usage:
+        """What was added after ``before`` (a ``snapshot()`` of this counter)."""
+
+        def diff(now: float | None, then: float | None) -> float | None:
+            return None if now is None or now == then else now - (then or 0)
+
+        return Usage(
+            calls=self.calls - before.calls,
+            input_tokens=diff(self.input_tokens, before.input_tokens),
+            output_tokens=diff(self.output_tokens, before.output_tokens),
+            cost_usd_est=diff(self.cost_usd_est, before.cost_usd_est),
+        )
+
+
+USAGE = Usage()
+
+
+def snapshot() -> Usage:
+    """A copy of the process-wide counter, to diff with ``USAGE.since`` later."""
+    return replace(USAGE)
 
 
 # --- availability -------------------------------------------------------------------------
@@ -237,6 +299,7 @@ def run(
     workdir = Path(cwd) if cwd is not None else find_repo_root(Path(__file__).parent)
 
     started = time.monotonic()
+    USAGE.calls += 1
     try:
         proc = subprocess.run(
             argv,
@@ -262,6 +325,11 @@ def run(
     if proc.returncode != 0:
         raise ClaudeUnavailable(f"claude exited {proc.returncode}", _tail(proc.stderr))
     result = _parse_stdout(proc.stdout)
+    usage = result.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    cost = result.get("total_cost_usd")
+    cost = float(cost) if isinstance(cost, int | float) and not isinstance(cost, bool) else None
+    USAGE.record(usage, cost)
     if result.get("is_error"):
         raise ClaudeUnavailable(
             f"claude reported an error ({result.get('subtype', '?')}): "
@@ -279,13 +347,11 @@ def run(
     except SchemaError as exc:
         raise ClaudeUnavailable(f"structured_output does not match the schema: {exc}") from exc
 
-    usage = result.get("usage")
-    cost = result.get("total_cost_usd")
     return RunResult(
         structured_output=output,
         session_id=result.get("session_id"),
-        usage=usage if isinstance(usage, dict) else {},
-        total_cost_usd=float(cost) if isinstance(cost, int | float) else None,
+        usage=usage,
+        total_cost_usd=cost,
         prompt_hash=file_hash(prompt_path),
         schema_hash=file_hash(schema_path),
         duration_s=duration,

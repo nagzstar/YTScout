@@ -10,8 +10,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sqlite3
 import sys
+import traceback
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -445,6 +447,11 @@ def _require_quota_flag(args: argparse.Namespace, command: str) -> bool:
     return False
 
 
+# run_weekly.ps1 sets this to its log file so each step's ``runs`` row can point at it.
+RUN_LOG_ENV = "YTSCOUT_RUN_LOG"
+ERROR_TAIL_CHARS = 500
+
+
 @dataclass
 class RunRecord:
     """The ``runs`` row a command is writing; set ``status`` before the block ends."""
@@ -455,20 +462,37 @@ class RunRecord:
 
 @contextmanager
 def recorded_run(conn: sqlite3.Connection, kind: str) -> Iterator[RunRecord]:
-    """Record a ``runs`` row around a DB-touching command: start, finish, kind, status.
+    """Record a ``runs`` row around a DB-touching command: start, finish, kind, status,
+    and what it spent (031): ledger units, Claude calls, tokens and the cost estimate.
 
-    An exception escaping the block marks the row ``error`` and propagates.
+    An exception escaping the block marks the row ``error``, keeps the last 500 characters
+    of its traceback in ``error_tail``, and propagates.
     """
+    units_before = repo.quota_total(conn)
+    usage_before = claude_runner.snapshot()
     with conn:
-        record = RunRecord(repo.start_run(conn, kind))
+        record = RunRecord(repo.start_run(conn, kind, os.environ.get(RUN_LOG_ENV) or None))
+    error_tail: str | None = None
     try:
         yield record
     except BaseException:
         record.status = "error"
+        error_tail = traceback.format_exc()[-ERROR_TAIL_CHARS:]
         raise
     finally:
+        usage = claude_runner.USAGE.since(usage_before)
         with conn:
-            repo.finish_run(conn, record.id, record.status)
+            repo.finish_run(
+                conn,
+                record.id,
+                record.status,
+                units_used=repo.quota_total(conn) - units_before,
+                claude_calls=usage.calls,
+                claude_input_tokens=usage.input_tokens,
+                claude_output_tokens=usage.output_tokens,
+                claude_cost_usd_est=usage.cost_usd_est,
+                error_tail=error_tail,
+            )
 
 
 def _ca_certs_if_token(settings: Settings) -> Path | None:

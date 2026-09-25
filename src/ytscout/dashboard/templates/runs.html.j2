@@ -1,5 +1,46 @@
 <section id="runs">
   <h2>Runs</h2>
-  {# Placeholder: a later issue lists recent runs and their logs here. #}
+  {% set r = d.runs %}
+  <dl class="facts">
+    <div><dt>This week (since {{ r.week.since | day }})</dt><dd>{{ r.week.runs }} runs · {{ r.week.not_ok }} not ok</dd></div>
+    <div><dt>Units</dt><dd>{{ r.week.units_used | number }}</dd></div>
+    <div><dt>Claude calls</dt><dd>{{ r.week.claude_calls | number }}</dd></div>
+    <div><dt>Tokens in / out</dt><dd>{{ r.week.claude_input_tokens | number }} / {{ r.week.claude_output_tokens | number }}</dd></div>
+    <div><dt>Cost estimate</dt><dd>${{ r.week.claude_cost_usd_est | decimal }} <span class="muted">(the CLI's estimate; informational, the subscription is not billed per call)</span></dd></div>
+    <div><dt>Pending analyses</dt><dd id="pending-analyses">{{ r.pending }}</dd></div>
+  </dl>
+  {% if r.log_path %}
+  <p class="muted">Latest run log: <code id="run-log">{{ r.log_path }}</code></p>
+  {% endif %}
+  <h3>Units by day (Pacific), last {{ r.units_by_day.labels | length }} days</h3>
+  <div class="panel chart"><canvas id="units-chart" aria-label="YouTube API units by day" role="img"></canvas></div>
+  <script type="application/json" id="units-data">{{ r.units_by_day | tojson }}</script>
+  <h3>Last {{ r.recent | length }} runs</h3>
+  {% if not r.recent %}
   <p class="empty">Nothing yet.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr>
+      <th>Kind</th><th>Started</th><th class="num">Duration</th><th>Status</th>
+      <th class="num">Units</th><th class="num">Claude calls</th><th class="num">Tokens</th>
+    </tr></thead>
+    <tbody>
+    {% for run in r.recent %}
+    <tr>
+      <td>{{ run.kind }}</td>
+      <td>{{ run.started_at }}</td>
+      <td class="num">{{ run.duration_s | duration }}</td>
+      <td class="{{ 'status-bad' if run.finished_at and run.status != 'ok' else '' }}">{{ run.status or "running" }}
+        {% if run.error_tail %}<details><summary>traceback</summary><pre>{{ run.error_tail }}</pre></details>{% endif %}
+      </td>
+      <td class="num">{{ run.units_used | number }}</td>
+      <td class="num">{{ run.claude_calls | number }}</td>
+      <td class="num">{{ run.tokens | number }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
 </section>
