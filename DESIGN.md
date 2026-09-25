@@ -175,6 +175,7 @@ est_monthly_gbp         = newcomer_monthly_views / 1000 × rpm_gbp
 ```
 - `config/rpm_tiers.yaml` holds the table. Seed it with public creator-reported ranges (finance/business high, tech/education mid, entertainment/animals low; Shorts a small fraction of long-form). Every row carries a `source` and `last_reviewed` field. Values are in USD and converted with a fixed `usd_gbp` rate in config.
 - Calibration is recomputed each run from the own channel's actual RPM. If the Analytics API isn't connected, calibration = 1.0 and the dashboard shows an "uncalibrated" badge.
+- As built (024): own actual RPM = median `rpm_usd` over own Shorts with ≥ 1,000 views, taking each video's newest `own_analytics` window that ends within the last 90 days. Long-form niches use calibration 1.0 and carry `longform_uncalibrated` until the own channel has long-form analytics.
 - The topic category for a niche is assigned by Claude during brainstorm/validation from a fixed list of categories that match the RPM table's rows.
 
 ### 6.4 Manual hours / month
@@ -201,6 +202,7 @@ manual_hours_per_video = Σ hours(step) for steps required by the niche AND not 
 videos_per_month       = config default (Shorts: 20, long-form: 4), overridable per niche
 manual_hours_per_month = manual_hours_per_video × videos_per_month
 ```
+As built (024): `scout tag` stores the steps plus `needs_specific_footage`; when true, `visuals_stock` costs `specific_footage_hours` and a `partial` override is scaled by the same ratio (0.5 h × 2.5/1.0 = 1.25 h). A disqualified niche stores `manual_hours_per_month = NULL`, score 0, flag `disqualified`.
 
 ### 6.5 Final score
 ```
@@ -389,7 +391,7 @@ Core tables; columns abbreviated. All timestamps UTC.
 - **video_snapshots** — `video_id, captured_at, views, likes, comments`
 - **transcripts** — `video_id, language, text, source, status, fetched_at`
 - **own_analytics** — `video_id, window_start, window_end, views, est_revenue_usd, rpm_usd, monetized_playbacks, avg_view_duration_s, avg_view_pct, impressions, ctr, sub_delta, traffic_json`
-- **niches** — `id, format, topic, topic_category, label, status, source ('llm'|'snowball'|'seed'), created_at, queries_json, required_steps_json`
+- **niches** — `id, format, topic, topic_category, label, status, source ('llm'|'snowball'|'seed'), created_at, queries_json, required_steps_json, meta_json, validated_at, needs_specific_footage, tag_prompt_hash, tag_schema_hash, tag_notes, tagged_at`
 - **niche_channels** — `niche_id, channel_id, is_small, added_at`
 - **niche_scores** — `niche_id, scored_at, opportunity, small_outlier_rate, newcomer_view_share, concentration, newcomer_monthly_views_p25/p50/p75, rpm_gbp, est_monthly_gbp, manual_hours_per_month, score, confidence_flags_json`
 - **competitor_analyses** — `id, run_at, prompt_hash, schema_version, packet_path, result_json, status`

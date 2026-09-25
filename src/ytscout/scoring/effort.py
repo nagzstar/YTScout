@@ -6,6 +6,7 @@ arithmetic (``effective_hours``); this module only sums the steps a niche requir
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from collections.abc import Iterable, Mapping
 
@@ -19,6 +20,8 @@ def manual_hours_per_video(
     steps: Iterable[Step] | Mapping[str, Step],
     coverage: PipelineCoverage,
     fmt: str,
+    *,
+    needs_specific_footage: bool = False,
 ) -> tuple[float, list[str]]:
     """Hours a human still spends per video on the steps the niche requires.
 
@@ -27,6 +30,11 @@ def manual_hours_per_video(
     set); ``floor_hours`` applied last. A required step the coverage file does not list is
     costed manual. A required step that is ``disqualifying_for_faceless`` makes the total
     ``inf`` and flags the niche ``disqualified``. An unknown step id raises ``KeyError``.
+
+    ``needs_specific_footage`` (the step tagger's verdict, 024) costs a step that has
+    ``specific_footage_hours`` at those hours instead of ``default_hours``, and scales a
+    ``partial`` override by the same ratio: the audit measured the pipeline on generic
+    stock, and specific real footage takes proportionally longer to find.
     """
     by_id = dict(steps) if isinstance(steps, Mapping) else {s.id: s for s in steps}
     if fmt not in ("shorts", "longform"):
@@ -44,6 +52,8 @@ def manual_hours_per_video(
             total = math.inf
             continue
         cov = coverage.steps.get(step_id) or StepCoverage(step_id, "manual")
+        if needs_specific_footage:
+            step, cov = specific_footage(step, cov)
         total += effective_hours(step, cov, fmt, supported=supported)  # type: ignore[arg-type]
     return total, flags
 
@@ -55,3 +65,19 @@ def manual_hours_per_month(per_video: float, videos_per_month: float) -> float:
     if math.isinf(per_video):
         return math.inf
     return per_video * videos_per_month
+
+
+def specific_footage(step: Step, cov: StepCoverage) -> tuple[Step, StepCoverage]:
+    """The step and its coverage re-costed for a niche that needs specific real footage.
+
+    Unchanged for a step without ``specific_footage_hours``. Otherwise the base hours
+    become ``specific_footage_hours`` (for Shorts too) and a ``partial`` override is
+    multiplied by ``specific_footage_hours / default_hours``.
+    """
+    if step.specific_footage_hours is None or step.default_hours <= 0:
+        return step, cov
+    ratio = step.specific_footage_hours / step.default_hours
+    step = dataclasses.replace(step, default_hours=step.specific_footage_hours, shorts_hours=None)
+    if cov.coverage == "partial" and cov.manual_hours_override is not None:
+        cov = dataclasses.replace(cov, manual_hours_override=cov.manual_hours_override * ratio)
+    return step, cov

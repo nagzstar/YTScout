@@ -129,7 +129,7 @@ def test_quota_exhausted_skips_collectors_still_scores_and_exits_3(tmp_path: Pat
     for skipped in ("--analytics", "--transcripts", "--niches"):
         assert f"SKIP  python -m ytscout collect {skipped}" in log
     assert "EXIT  2  python -m ytscout analyse --summaries" in log
-    assert "EXIT  0  python -m ytscout score --competitors" in log
+    assert "EXIT  0  python -m ytscout score --all" in log
     assert log.rstrip().splitlines()[-2].endswith("EXIT  0  python -m ytscout dashboard")
 
 

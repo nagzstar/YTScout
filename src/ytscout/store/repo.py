@@ -758,3 +758,138 @@ def mark_niche_validated(
     )
     if cur.rowcount == 0:
         raise LookupError(f"no niche {niche_id!r}")
+
+
+# --- step tags and niche scores (024) -------------------------------------------------------
+
+NICHE_STATUS_SCORED = "scored"
+# Tagged and scored: validated onwards, except shelved. `track` is the stored decision value
+# (the dashboard's button); `tracking` is DESIGN.md §5.4's name for it, accepted too.
+NICHE_STATUSES_TAGGABLE = (NICHE_STATUS_VALIDATED, NICHE_STATUS_SCORED, "track", "tracking")
+
+
+def niches_to_tag(conn: sqlite3.Connection, prompt_hash: str, limit: int) -> list[sqlite3.Row]:
+    """Validated-or-later niches whose tags are missing or came from another prompt."""
+    marks = ", ".join("?" * len(NICHE_STATUSES_TAGGABLE))
+    return conn.execute(
+        f"SELECT * FROM niches WHERE status IN ({marks})"
+        " AND (tag_prompt_hash IS NULL OR tag_prompt_hash != ?) ORDER BY id LIMIT ?",
+        (*NICHE_STATUSES_TAGGABLE, prompt_hash, limit),
+    ).fetchall()
+
+
+def set_niche_tags(
+    conn: sqlite3.Connection,
+    niche_id: int,
+    *,
+    required_steps: Sequence[str],
+    needs_specific_footage: bool,
+    notes: str,
+    prompt_hash: str,
+    schema_hash: str,
+    tagged_at: str | datetime | None = None,
+) -> None:
+    """Store the tagger's verdict; it replaces the brainstorm's suspected steps."""
+    cur = conn.execute(
+        "UPDATE niches SET required_steps_json = ?, needs_specific_footage = ?, tag_notes = ?,"
+        " tag_prompt_hash = ?, tag_schema_hash = ?, tagged_at = ? WHERE id = ?",
+        (
+            json.dumps(list(required_steps), ensure_ascii=False),
+            int(needs_specific_footage),
+            notes,
+            prompt_hash,
+            schema_hash,
+            _ts(tagged_at) or now_utc(),
+            niche_id,
+        ),
+    )
+    if cur.rowcount == 0:
+        raise LookupError(f"no niche {niche_id!r}")
+
+
+def scorable_niches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Validated-or-later niches, tagged or not (the caller counts the untagged)."""
+    marks = ", ".join("?" * len(NICHE_STATUSES_TAGGABLE))
+    return conn.execute(
+        f"SELECT * FROM niches WHERE status IN ({marks}) ORDER BY id", NICHE_STATUSES_TAGGABLE
+    ).fetchall()
+
+
+def niche_sample_videos(conn: sqlite3.Connection, niche_id: int) -> list[sqlite3.Row]:
+    """Every video of the niche's channels with its latest snapshot's views (NULL if none)."""
+    return conn.execute(
+        """
+        SELECT v.id, v.channel_id, v.title, v.published_at, v.duration_s,
+               (SELECT s.views FROM video_snapshots s WHERE s.video_id = v.id
+                ORDER BY s.captured_at DESC, s.id DESC LIMIT 1) AS views
+        FROM videos v JOIN niche_channels nc ON nc.channel_id = v.channel_id
+        WHERE nc.niche_id = ?
+        ORDER BY v.channel_id, v.published_at DESC, v.id
+        """,
+        (niche_id,),
+    ).fetchall()
+
+
+_NICHE_SCORE_COLUMNS = (
+    "opportunity",
+    "small_outlier_rate",
+    "newcomer_view_share",
+    "concentration",
+    "newcomer_monthly_views_p25",
+    "newcomer_monthly_views_p50",
+    "newcomer_monthly_views_p75",
+    "rpm_gbp",
+    "est_monthly_gbp",
+    "manual_hours_per_month",
+    "score",
+)
+
+
+def add_niche_score(
+    conn: sqlite3.Connection,
+    niche_id: int,
+    *,
+    scored_at: str | datetime,
+    flags: Sequence[str],
+    **values: float | None,
+) -> int:
+    """Append one ``niche_scores`` row (history: never updated). Returns its id."""
+    unknown = set(values) - set(_NICHE_SCORE_COLUMNS)
+    if unknown:
+        raise ValueError(f"unknown niche_scores columns: {sorted(unknown)}")
+    columns = ("niche_id", "scored_at", *_NICHE_SCORE_COLUMNS, "confidence_flags_json")
+    row = (
+        niche_id,
+        _ts(scored_at),
+        *(values.get(c) for c in _NICHE_SCORE_COLUMNS),
+        json.dumps(list(flags)),
+    )
+    cur = conn.execute(
+        f"INSERT INTO niche_scores ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
+        row,
+    )
+    return int(cur.lastrowid or 0)
+
+
+def mark_niche_scored(conn: sqlite3.Connection, niche_id: int) -> None:
+    """``validated`` → ``scored``; later statuses (a track decision) are left alone."""
+    conn.execute(
+        "UPDATE niches SET status = ? WHERE id = ? AND status = ?",
+        (NICHE_STATUS_SCORED, niche_id, NICHE_STATUS_VALIDATED),
+    )
+
+
+def own_rpm_rows(conn: sqlite3.Connection, since: str) -> list[sqlite3.Row]:
+    """Each own video's newest ``own_analytics`` window ending on or after ``since``
+    (``YYYY-MM-DD``), with the video's duration (NULL when the video row is missing)."""
+    return conn.execute(
+        """
+        SELECT a.video_id, a.views, a.rpm_usd, v.duration_s
+        FROM own_analytics a LEFT JOIN videos v ON v.id = a.video_id
+        WHERE a.window_end >= ?
+          AND a.window_end = (SELECT MAX(b.window_end) FROM own_analytics b
+                              WHERE b.video_id = a.video_id)
+        ORDER BY a.video_id, a.window_start
+        """,
+        (since,),
+    ).fetchall()

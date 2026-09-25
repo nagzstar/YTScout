@@ -65,7 +65,7 @@ def test_no_command_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None
 def test_no_top_level_stubs_are_left() -> None:
     """Every top-level command is real since 021; only scout subcommands still stub."""
     assert STUBS == {}
-    assert set(SCOUT_STUBS) == {"tag", "snowball", "sensitivity"}
+    assert set(SCOUT_STUBS) == {"snowball", "sensitivity"}
 
 
 @pytest.mark.parametrize("name", sorted(SCOUT_STUBS))
@@ -79,8 +79,8 @@ def test_each_scout_stub_exits_2_with_not_implemented_line(
 
 
 def test_scout_stub_swallows_future_flags(capsys: pytest.CaptureFixture[str]) -> None:
-    """run_weekly.ps1 will call e.g. `scout tag --max-units 500`; still a 2."""
-    assert main(["scout", "tag", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
+    """run_weekly.ps1 will call e.g. `scout snowball --max-units 500`; still a 2."""
+    assert main(["scout", "snowball", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
     assert "not implemented" in capsys.readouterr().err
 
 

@@ -27,7 +27,15 @@ from ytscout.analyse import (
     summarise_videos,
     summary_paths,
 )
-from ytscout.audit import COVERAGE_RELPATH, STEPS_RELPATH, AuditError, format_table, run_audit
+from ytscout.audit import (
+    COVERAGE_RELPATH,
+    STEPS_RELPATH,
+    AuditError,
+    format_table,
+    load_coverage,
+    load_steps,
+    run_audit,
+)
 from ytscout.collect import ChannelNotFound, Counts, collect_own
 from ytscout.collect.analytics import (
     DEFAULT_DAYS,
@@ -56,15 +64,19 @@ from ytscout.scoring import (
     discovery_config,
     load_scoring,
     metrics_config,
+    niche_scoring_config,
     shorts_max_seconds,
     validation_config,
 )
 from ytscout.scoring.metrics import FORMATS
 from ytscout.scout import propose as scout_propose
+from ytscout.scout import score as scout_score
+from ytscout.scout import tag as scout_tag
 from ytscout.scout import validate as scout_validate
 from ytscout.settings import (
     DEFAULT_DATA_DIR,
     DEFAULT_QUOTA_DAILY_CAP,
+    DEFAULT_USD_GBP,
     Settings,
     SettingsError,
     SettingsMissing,
@@ -109,7 +121,6 @@ STUBS: dict[str, tuple[str, str]] = {}
 
 # scout subcommand -> (help text, issue that delivers it); these exit 2 until then.
 SCOUT_STUBS: dict[str, tuple[str, str]] = {
-    "tag": ("tag each niche's required production steps", "024"),
     "snowball": ("find adjacent niches from known channels", "026"),
     "sensitivity": ("re-score five niches under threshold changes", "028"),
 }
@@ -217,11 +228,18 @@ def build_parser() -> argparse.ArgumentParser:
     disc.set_defaults(func=cmd_discover)
 
     score = sub.add_parser("score", help="compute metrics and scores from the DB (no API)")
-    score.add_argument(
+    what = score.add_mutually_exclusive_group()
+    what.add_argument(
         "--competitors",
         action="store_true",
         help="channel metrics for every tracked channel: 90d/365d x shorts/longform",
     )
+    what.add_argument(
+        "--niches",
+        action="store_true",
+        help="niche scores for every tagged validated/scored/tracked niche, ranked",
+    )
+    what.add_argument("--all", action="store_true", help="competitors, then niches (the default)")
     score.set_defaults(func=cmd_score)
 
     dash = sub.add_parser(
@@ -314,6 +332,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_quota_flags(validate)
     validate.set_defaults(func=cmd_scout_validate)
+    tag = scout_sub.add_parser(
+        "tag",
+        help=f"Claude tags each validated niche's required production steps (claude -p,"
+        f" {scout_tag.BATCH_SIZE} niches per call)",
+    )
+    tag.add_argument(
+        "--limit",
+        type=_positive_int,
+        default=scout_tag.DEFAULT_LIMIT,
+        help=f"niches to tag at most (default {scout_tag.DEFAULT_LIMIT})",
+    )
+    tag.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show which niches would be tagged in which batches; call nothing, write nothing",
+    )
+    tag.set_defaults(func=cmd_scout_tag)
     for name, (help_text, issue) in SCOUT_STUBS.items():
         stub = scout_sub.add_parser(name, help=f"{help_text} (issue {issue})")
         stub.set_defaults(func=_make_stub(f"scout {name}", issue), stub=True)
@@ -925,35 +960,82 @@ def _collect_competitors(
 
 
 def cmd_score(args: argparse.Namespace, _extras: list[str]) -> int:
-    """``score --competitors``: append channel_metrics rows. No API calls."""
-    if not args.competitors:
-        print(
-            "ytscout score: choose what to score: --competitors (niche scores: issue 024)",
-            file=sys.stderr,
-        )
-        return EXIT_ERROR
+    """``score [--competitors | --niches | --all]``: append channel_metrics and/or
+    niche_scores rows. No API calls. ``--all`` (the default) runs both."""
+    do_competitors = args.competitors or not args.niches
+    do_niches = args.niches or not args.competitors
     found = _dashboard_db_path("score")
     if found is None:
         return EXIT_ERROR
     root, db_path = found
     try:
-        cfg = metrics_config(load_scoring(root / SCORING_RELPATH))
+        scoring_doc = load_scoring(root / SCORING_RELPATH)
+        metrics_cfg = metrics_config(scoring_doc) if do_competitors else None
+        niche_cfg = niche_scoring_config(scoring_doc) if do_niches else None
     except ScoringConfigError as exc:
         print(f"score: {exc}", file=sys.stderr)
         return EXIT_ERROR
     if not db_path.is_file():
-        print(f"score: no database at {db_path}; run `collect` first", file=sys.stderr)
-        return EXIT_ERROR
+        if args.competitors:
+            print(f"score: no database at {db_path}; run `collect` first", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"score: nothing to score (no database at {db_path})")
+        return EXIT_OK
     conn = connect(db_path)
     try:
-        with recorded_run(conn, "score_competitors"):
-            result = score_competitors(conn, config=cfg, now=utc_now())
+        if metrics_cfg is not None:
+            with recorded_run(conn, "score_competitors"):
+                result = score_competitors(conn, config=metrics_cfg, now=utc_now())
+            print(
+                f"score --competitors: {result.rows} channel_metrics rows for"
+                f" {result.channels} channel(s) x {len(WINDOWS)} windows x {len(FORMATS)}"
+                f" formats (computed_at {result.computed_at})"
+            )
+        if niche_cfg is not None:
+            return _score_niches(conn, root, niche_cfg)
     finally:
         conn.close()
+    return EXIT_OK
+
+
+def _score_niches(conn: sqlite3.Connection, root: Path, cfg: dict) -> int:
+    """``score --niches``: one niche_scores row per tagged niche, then the ranked table."""
+    try:
+        settings: Settings | None = load(repo_root=root)
+    except SettingsMissing:
+        settings = None
+    except SettingsError as exc:
+        print(f"score: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        rpm = scout_propose.load_rpm_tiers(root / scout_propose.RPM_TIERS_RELPATH)
+        steps = load_steps(root / STEPS_RELPATH)
+        coverage = load_coverage(root / COVERAGE_RELPATH)
+    except (scout_propose.ScoutConfigError, AuditError) as exc:
+        print(f"score: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    with recorded_run(conn, "score_niches"):
+        result = scout_score.score_niches(
+            conn,
+            cfg=cfg,
+            rpm=rpm,
+            steps=steps,
+            coverage=coverage,
+            usd_gbp=settings.usd_gbp if settings else DEFAULT_USD_GBP,
+            now=utc_now(),
+        )
+    skipped = (
+        f"; {result.skipped_untagged} untagged niche(s) skipped (run `scout tag`)"
+        if result.skipped_untagged
+        else ""
+    )
+    if not result.scored:
+        print(f"score --niches: nothing to score{skipped}")
+        return EXIT_OK
+    print(scout_score.format_table(result))
     print(
-        f"score --competitors: {result.rows} channel_metrics rows for {result.channels}"
-        f" channel(s) x {len(WINDOWS)} windows x {len(FORMATS)} formats"
-        f" (computed_at {result.computed_at})"
+        f"score --niches: {len(result.scored)} niche_scores row(s) appended"
+        f" (scored_at {result.scored_at}){skipped}"
     )
     return EXIT_OK
 
@@ -1695,6 +1777,92 @@ def cmd_scout_validate(args: argparse.Namespace, _extras: list[str]) -> int:
         return EXIT_OK
     finally:
         conn.close()
+
+
+def cmd_scout_tag(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``scout tag``: one ``claude -p`` call per 10 validated niches lacking current tags."""
+    root = find_repo_root()
+    prompt_path, schema_path = scout_tag.prompt_paths(root)
+    for path in (prompt_path, schema_path, root / STEPS_RELPATH, root / SCORING_RELPATH):
+        if not path.is_file():
+            print(f"scout tag: missing {path}", file=sys.stderr)
+            return EXIT_ERROR
+    settings: Settings | None
+    try:
+        settings = load(repo_root=root)
+    except SettingsMissing as exc:
+        if not args.dry_run:
+            print(f"scout tag: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"note: {exc.path} not found; using the default data directory")
+        settings = None
+    except SettingsError as exc:
+        print(f"scout tag: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        shorts_max = shorts_max_seconds(load_scoring(root / SCORING_RELPATH))
+    except ScoringConfigError as exc:
+        print(f"scout tag: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+    prompt_hash = claude_runner.file_hash(prompt_path)
+
+    if args.dry_run:
+        copy = read_copy(db_path)
+        try:
+            targets = repo.niches_to_tag(copy, prompt_hash, args.limit)
+            print("dry run: planned claude -p calls (nothing is called, nothing is written)")
+            for n, batch in enumerate(scout_tag.batches(targets), 1):
+                print(f"call {n}: niches " + ", ".join(str(r["id"]) for r in batch))
+                for row in batch:
+                    titles = scout_tag.sample_titles(copy, row, shorts_max)
+                    print(
+                        f"  {row['id']} [{row['format']}] {row['label'] or row['topic']}"
+                        f" ({len(titles)} sample title(s))"
+                    )
+        finally:
+            copy.close()
+        calls = math.ceil(len(targets) / scout_tag.BATCH_SIZE)
+        print(
+            f"planned: {len(targets)} niche(s) in {calls} call(s); prompt {prompt_path.name}"
+            f" ({prompt_hash}), schema {schema_path.name}"
+            f" ({claude_runner.file_hash(schema_path)})"
+        )
+        return EXIT_OK
+
+    assert settings is not None
+    conn = connect(db_path)
+    try:
+        if not repo.niches_to_tag(conn, prompt_hash, 1):
+            print("scout tag: nothing to tag (no validated niche lacks current tags)")
+            return EXIT_OK
+        reason = claude_runner.check_available()
+        if reason is not None:
+            print(f"scout tag: claude unavailable: {reason}", file=sys.stderr)
+            return EXIT_CLAUDE_UNAVAILABLE
+        with recorded_run(conn, "scout_tag") as run:
+            result = scout_tag.tag_niches(
+                conn,
+                repo_root=root,
+                packets_dir=packets.packets_dir(settings.data_dir),
+                shorts_max_seconds=shorts_max,
+                limit=args.limit,
+                model=settings.claude.model,
+            )
+            if result.failure:
+                run.status = "error"
+    finally:
+        conn.close()
+    print(
+        f"scout tag: {len(result.tagged)} of {result.candidates} niche(s) tagged in"
+        f" {result.calls} call(s) ({result.duration_s:.0f}s, prompt {result.prompt_hash})"
+    )
+    if result.missing:
+        print("not in Claude's answer, left untagged: " + ", ".join(map(str, result.missing)))
+    if result.failure:
+        print(f"scout tag: claude failed: {result.failure}", file=sys.stderr)
+        return EXIT_CLAUDE_UNAVAILABLE
+    return EXIT_OK
 
 
 def _make_stub(name: str, issue: str):

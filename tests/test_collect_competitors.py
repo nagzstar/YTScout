@@ -290,8 +290,6 @@ def test_cli_requires_one_source_and_a_quota_flag(
     assert main(["collect", "--competitors"]) == EXIT_ERROR
     assert "--max-units" in capsys.readouterr().err
     assert main(["collect", "--own", "--competitors", "--dry-run"]) == EXIT_ERROR
-    assert main(["score"]) == EXIT_ERROR
-    assert "--competitors" in capsys.readouterr().err
 
 
 def test_cli_quota_stop_exits_3(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:

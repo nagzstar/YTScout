@@ -60,7 +60,7 @@ $Steps = @(
     @{ Args = @('collect', '--niches', '--max-units', $MaxUnits); Collector = $true },
     @{ Args = @('analyse', '--summaries'); Collector = $false },
     @{ Args = @('analyse', '--competitors'); Collector = $false },
-    @{ Args = @('score', '--competitors'); Collector = $false },
+    @{ Args = @('score', '--all'); Collector = $false },
     @{ Args = @('dashboard'); Collector = $false }
 )
 
