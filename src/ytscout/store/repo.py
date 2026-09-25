@@ -708,3 +708,53 @@ def list_niches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 def get_niche(conn: sqlite3.Connection, niche_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM niches WHERE id = ?", (niche_id,)).fetchone()
+
+
+NICHE_STATUS_VALIDATED = "validated"
+
+
+def proposed_niches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every ``proposed`` niche in ``created_at`` order (id breaks ties)."""
+    return conn.execute(
+        "SELECT * FROM niches WHERE status = ? ORDER BY created_at, id", (NICHE_STATUS_PROPOSED,)
+    ).fetchall()
+
+
+def put_niche_channel(
+    conn: sqlite3.Connection,
+    niche_id: int,
+    channel_id: str,
+    *,
+    is_small: bool | None,
+    added_at: str | datetime | None = None,
+) -> None:
+    """Link a sampled channel to a niche. A re-validation refreshes ``is_small`` only."""
+    conn.execute(
+        "INSERT INTO niche_channels (niche_id, channel_id, is_small, added_at)"
+        " VALUES (?, ?, ?, ?)"
+        " ON CONFLICT (niche_id, channel_id) DO UPDATE SET is_small = excluded.is_small",
+        (
+            niche_id,
+            channel_id,
+            None if is_small is None else int(is_small),
+            _ts(added_at) or now_utc(),
+        ),
+    )
+
+
+def niche_channels(conn: sqlite3.Connection, niche_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM niche_channels WHERE niche_id = ? ORDER BY channel_id", (niche_id,)
+    ).fetchall()
+
+
+def mark_niche_validated(
+    conn: sqlite3.Connection, niche_id: int, validated_at: str | datetime | None = None
+) -> None:
+    """``status = 'validated'`` and ``validated_at``: the end of ``scout validate``."""
+    cur = conn.execute(
+        "UPDATE niches SET status = ?, validated_at = ? WHERE id = ?",
+        (NICHE_STATUS_VALIDATED, _ts(validated_at) or now_utc(), niche_id),
+    )
+    if cur.rowcount == 0:
+        raise LookupError(f"no niche {niche_id!r}")

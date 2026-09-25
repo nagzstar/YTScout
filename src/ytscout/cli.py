@@ -57,9 +57,11 @@ from ytscout.scoring import (
     load_scoring,
     metrics_config,
     shorts_max_seconds,
+    validation_config,
 )
 from ytscout.scoring.metrics import FORMATS
 from ytscout.scout import propose as scout_propose
+from ytscout.scout import validate as scout_validate
 from ytscout.settings import (
     DEFAULT_DATA_DIR,
     DEFAULT_QUOTA_DAILY_CAP,
@@ -107,7 +109,6 @@ STUBS: dict[str, tuple[str, str]] = {}
 
 # scout subcommand -> (help text, issue that delivers it); these exit 2 until then.
 SCOUT_STUBS: dict[str, tuple[str, str]] = {
-    "validate": ("search the queries and sample the niche's channels", "022"),
     "tag": ("tag each niche's required production steps", "024"),
     "snowball": ("find adjacent niches from known channels", "026"),
     "sensitivity": ("re-score five niches under threshold changes", "028"),
@@ -299,6 +300,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="show what would be added or asked; call nothing, write nothing",
     )
     propose.set_defaults(func=cmd_scout_propose)
+    validate = scout_sub.add_parser(
+        "validate",
+        help="search a niche's queries and sample its channels and videos (up to ~762 units"
+        " per niche)",
+    )
+    which = validate.add_mutually_exclusive_group(required=True)
+    which.add_argument("--niche", type=_positive_int, metavar="ID", help="validate one niche")
+    which.add_argument(
+        "--all-proposed",
+        action="store_true",
+        help="validate every proposed niche, oldest first, until the quota runs out",
+    )
+    _add_quota_flags(validate)
+    validate.set_defaults(func=cmd_scout_validate)
     for name, (help_text, issue) in SCOUT_STUBS.items():
         stub = scout_sub.add_parser(name, help=f"{help_text} (issue {issue})")
         stub.set_defaults(func=_make_stub(f"scout {name}", issue), stub=True)
@@ -1533,6 +1548,153 @@ def cmd_scout_propose(args: argparse.Namespace, _extras: list[str]) -> int:
         f"packet {packet_name}, prompt {result.prompt_hash})"
     )
     return EXIT_OK
+
+
+def _validate_targets(
+    conn: sqlite3.Connection, args: argparse.Namespace
+) -> list[sqlite3.Row] | str:
+    """The niches ``scout validate`` should run on, or an error message."""
+    if args.all_proposed:
+        return repo.proposed_niches(conn)
+    row = repo.get_niche(conn, args.niche)
+    if row is None:
+        return f"no niche {args.niche}"
+    if row["status"] not in scout_validate.VALIDATABLE:
+        return (
+            f"niche {args.niche} is {row['status']!r}; only proposed or validated niches are"
+            " (re)validated, so a tracking or shelved decision is never undone"
+        )
+    return [row]
+
+
+def _print_validate_plan(
+    niches: Sequence[sqlite3.Row], cfg: scout_validate.ValidationConfig, ledger: Ledger
+) -> None:
+    print("dry run: planned YouTube Data API calls (nothing is sent, nothing is written)")
+    left = ledger.remaining_today()
+    if ledger.run_cap is not None:
+        left = min(left, ledger.run_cap)
+    total = 0
+    fits = 0
+    for niche in niches:
+        specs = scout_validate.planned_searches(niche)
+        units = scout_validate.worst_case_units(cfg, len(specs)) if specs else 0
+        label = niche["label"] or niche["topic"]
+        print(f"niche {niche['id']} [{niche['format']}] {label}: estimate <= {units} units")
+        for spec in specs:
+            print(
+                f"  search.list q={spec.query!r} order={spec.order}"
+                f" videoDuration={spec.video_duration} - 100 units"
+            )
+        if not specs:
+            print("  skipped: no search queries")
+        elif total + units <= left:
+            fits += 1
+        total += units
+    per_channel = (
+        f"up to {cfg.max_channels} channels: "
+        f"{math.ceil(cfg.max_channels / 50)} channels.list + "
+        f"{cfg.max_channels} playlistItems.list + {cfg.max_channels} videos.list"
+    )
+    print(f"per niche, after the searches: {per_channel}")
+    print(
+        f"planned: {len(niches)} niche(s), at most {total} units; {fits} fit in the"
+        f" {left} units left under the caps"
+    )
+
+
+def cmd_scout_validate(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``scout validate``: searches → channels → one uploads page + videos per channel.
+
+    Exit 3 when a quota cap stops the run; finished niches stay validated.
+    """
+    if not _require_quota_flag(args, "scout validate"):
+        return EXIT_ERROR
+    root = find_repo_root()
+    settings: Settings | None
+    try:
+        settings = load(repo_root=root)
+    except SettingsMissing as exc:
+        if not args.dry_run:
+            print(f"scout validate: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"note: {exc.path} not found; using the default data directory")
+        settings = None
+    except SettingsError as exc:
+        print(f"scout validate: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        scoring = load_scoring(root / SCORING_RELPATH)
+        shorts_max = shorts_max_seconds(scoring)
+        cfg = validation_config(scoring)
+    except ScoringConfigError as exc:
+        print(f"scout validate: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    daily_cap = settings.quota.daily_cap if settings else DEFAULT_QUOTA_DAILY_CAP
+    db_path = default_db_path(settings) if settings else root / DEFAULT_DATA_DIR / DB_FILENAME
+
+    if args.dry_run:
+        copy = read_copy(db_path)
+        try:
+            targets = _validate_targets(copy, args)
+            ledger = Ledger(copy, daily_cap, run_cap=args.max_units, dry_run=True)
+            if isinstance(targets, str):
+                print(f"scout validate: {targets}", file=sys.stderr)
+                return EXIT_ERROR
+            _print_validate_plan(targets, cfg, ledger)
+        finally:
+            copy.close()
+        return EXIT_OK
+
+    try:
+        transport = make_transport(settings, False)
+    except ValueError as exc:
+        print(f"scout validate: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    conn = connect(db_path)
+    try:
+        targets = _validate_targets(conn, args)
+        if isinstance(targets, str):
+            print(f"scout validate: {targets}", file=sys.stderr)
+            return EXIT_ERROR
+        if not targets:
+            print("scout validate: no proposed niches; run `scout propose` first")
+            return EXIT_OK
+        ledger = Ledger(conn, daily_cap, run_cap=args.max_units)
+        with recorded_run(conn, "scout_validate") as run:
+            result = scout_validate.validate_niches(
+                DataApi(ledger, transport),
+                conn,
+                targets,
+                cfg=cfg,
+                shorts_max_seconds=shorts_max,
+                now=utc_now(),
+            )
+            if result.stopped is not None:
+                run.status = "quota_exhausted"
+        for report in result.reports:
+            print(scout_validate.format_report(report))
+        print(
+            f"scout validate: {len(result.validated)} of {len(targets)} niche(s) validated;"
+            f" units this run {ledger.run_used}, units today {ledger.used_today()}"
+        )
+        if result.stopped is not None:
+            if result.not_started is not None:
+                need = scout_validate.worst_case_units(cfg)
+                print(
+                    f"stopped before niche {result.not_started.niche_id}: it needs up to"
+                    f" {need} units and fewer are left ({result.stopped})",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"stopped early; finished niches are committed: {result.stopped}",
+                    file=sys.stderr,
+                )
+            return EXIT_QUOTA_EXHAUSTED
+        return EXIT_OK
+    finally:
+        conn.close()
 
 
 def _make_stub(name: str, issue: str):

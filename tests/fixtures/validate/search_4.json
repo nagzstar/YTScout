@@ -1,0 +1,26 @@
+{
+  "q": "scariest ocean animals ranked",
+  "order": "date",
+  "items": [
+    {
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "S40"
+      },
+      "snippet": {
+        "channelId": "UC09",
+        "title": "scariest ocean animals ranked #0"
+      }
+    },
+    {
+      "id": {
+        "kind": "youtube#video",
+        "videoId": "S41"
+      },
+      "snippet": {
+        "channelId": "UC03",
+        "title": "scariest ocean animals ranked #1"
+      }
+    }
+  ]
+}

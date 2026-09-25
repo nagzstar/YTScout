@@ -1,0 +1,11 @@
+{
+  "format": "shorts",
+  "topic": "fixture_ocean_countdowns",
+  "topic_category": "education_science",
+  "label": "Fixture: ocean countdowns",
+  "queries": [
+    "top 5 deep sea creatures",
+    "scariest ocean animals ranked",
+    "ocean facts countdown"
+  ]
+}

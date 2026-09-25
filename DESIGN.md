@@ -135,10 +135,10 @@ Nagz can add seeds by hand in `config/seed_niches.yaml`.
 4. For each channel, `playlistItems.list` on the uploads playlist (1 unit/page, 50 per page) → last 30 video IDs, then `videos.list` in batches of 50 (1 unit/batch) → stats, duration (Shorts ≤ 60s… treat ≤ 3 min as Shorts-eligible per current YouTube rules, but classify by the channel's own format mix), publish date.
 5. Compute the metrics in §6.
 
-Typical cost: **~0.9–1.2k units per niche**. A discovery week validating 6–8 new niches plus refreshing existing ones fits in 10k/day. See §8 for the budget.
+Typical cost: **~0.9–1.2k units per niche**. As built (022): one uploads page and one `videos.list` per channel, 80 channels at most, so a niche costs at most 600 + 2 + 160 = **762 units**, and a niche is only started when that much is left under both caps. A discovery week validating 6–8 new niches plus refreshing existing ones fits in 10k/day. See §8 for the budget.
 
 ### 5.4 Niche lifecycle
-`proposed → validated → scored → (tracking | shelved)`. `scout validate` moves a niche to `validated`; `score` moves it to `scored`; Nagz picks `tracking` or `shelved` in the dashboard. Shelved niches keep their data and can be re-scored. Tracking niches are refreshed weekly at a fraction of the validation cost (no new searches; just `videos.list` on known channels' new uploads).
+`proposed → validated → scored → (tracking | shelved)`. `scout validate` moves a niche to `validated` and stamps `niches.validated_at` (migration 0006); it re-validates a `proposed` or `validated` niche but refuses any other status, so a decision is never undone. The stored values of the last step are the dashboard's decisions, `track` and `shelve`; `score` moves it to `scored`; Nagz picks `tracking` or `shelved` in the dashboard. Shelved niches keep their data and can be re-scored. Tracking niches are refreshed weekly at a fraction of the validation cost (no new searches; just `videos.list` on known channels' new uploads).
 
 ---
 

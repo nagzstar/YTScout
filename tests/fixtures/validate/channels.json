@@ -1,0 +1,220 @@
+{
+  "items": [
+    {
+      "id": "UC01",
+      "snippet": {
+        "title": "Channel UC01",
+        "publishedAt": "2026-03-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "5000",
+        "viewCount": "200000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU01"
+        }
+      }
+    },
+    {
+      "id": "UC02",
+      "snippet": {
+        "title": "Channel UC02",
+        "publishedAt": "2019-04-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "500000",
+        "viewCount": "20000000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU02"
+        }
+      }
+    },
+    {
+      "id": "UC03",
+      "snippet": {
+        "title": "Channel UC03",
+        "publishedAt": "2021-01-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "3000",
+        "viewCount": "120000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU03"
+        }
+      }
+    },
+    {
+      "id": "UC04",
+      "snippet": {
+        "title": "Channel UC04",
+        "publishedAt": "2026-05-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "50000",
+        "viewCount": "2000000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU04"
+        }
+      }
+    },
+    {
+      "id": "UC05",
+      "snippet": {
+        "title": "Channel UC05",
+        "publishedAt": "2026-06-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "9999",
+        "viewCount": "399960",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU05"
+        }
+      }
+    },
+    {
+      "id": "UC06",
+      "snippet": {
+        "title": "Channel UC06",
+        "publishedAt": "2026-07-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "10000",
+        "viewCount": "400000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU06"
+        }
+      }
+    },
+    {
+      "id": "UC07",
+      "snippet": {
+        "title": "Channel UC07",
+        "publishedAt": "2015-01-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "2000000",
+        "viewCount": "80000000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU07"
+        }
+      }
+    },
+    {
+      "id": "UC08",
+      "snippet": {
+        "title": "Channel UC08",
+        "publishedAt": "2025-09-25T12:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "100",
+        "viewCount": "4000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU08"
+        }
+      }
+    },
+    {
+      "id": "UC09",
+      "snippet": {
+        "title": "Channel UC09",
+        "publishedAt": "2025-12-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "100",
+        "viewCount": "4000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU09"
+        }
+      }
+    },
+    {
+      "id": "UC10",
+      "snippet": {
+        "title": "Channel UC10",
+        "publishedAt": "2016-01-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "200000",
+        "viewCount": "8000000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU10"
+        }
+      }
+    },
+    {
+      "id": "UC11",
+      "snippet": {
+        "title": "Channel UC11",
+        "publishedAt": "2024-01-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "20000",
+        "viewCount": "800000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU11"
+        }
+      }
+    },
+    {
+      "id": "UC12",
+      "snippet": {
+        "title": "Channel UC12",
+        "publishedAt": "2026-09-01T00:00:00Z"
+      },
+      "statistics": {
+        "subscriberCount": "2500",
+        "viewCount": "100000",
+        "videoCount": "12",
+        "hiddenSubscriberCount": false
+      },
+      "contentDetails": {
+        "relatedPlaylists": {
+          "uploads": "UU12"
+        }
+      }
+    }
+  ]
+}

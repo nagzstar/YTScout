@@ -90,6 +90,45 @@ def discovery_config(config: dict[str, Any]) -> DiscoveryConfig:
     return DiscoveryConfig(**values)
 
 
+@dataclass(frozen=True)
+class ValidationConfig:
+    """``niche_validation:`` in scoring.yaml: how ``scout validate`` samples a niche (022)."""
+
+    small_subs_max: int
+    small_age_days: int
+    lookback_days: int
+    max_channels: int
+    early_stop_after_searches: int
+    videos_per_channel: int
+    language: str
+
+
+def validation_config(config: dict[str, Any]) -> ValidationConfig:
+    """The ``niche_validation:`` section: every key required, integers positive."""
+    section = config.get("niche_validation")
+    if not isinstance(section, dict):
+        raise ScoringConfigError("scoring.yaml has no `niche_validation:` mapping")
+    values: dict[str, Any] = {}
+    for f in fields(ValidationConfig):
+        value = section.get(f.name)
+        if f.type == "str":
+            if not isinstance(value, str) or not value.strip():
+                raise ScoringConfigError(f"niche_validation.{f.name} must be a word, got {value!r}")
+            values[f.name] = value.strip().lower()
+        elif isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ScoringConfigError(
+                f"niche_validation.{f.name} must be a positive integer in scoring.yaml,"
+                f" got {value!r}"
+            )
+        else:
+            values[f.name] = value
+    if values["videos_per_channel"] > 50:
+        raise ScoringConfigError(
+            "niche_validation.videos_per_channel must be ≤ 50 (one playlist page)"
+        )
+    return ValidationConfig(**values)
+
+
 def metrics_config(config: dict[str, Any]) -> MetricsConfig:
     """The ``competitor_metrics:`` section: outlier rule and length buckets."""
     section = config.get("competitor_metrics")

@@ -88,3 +88,20 @@ competitor_metrics:
     - {label: "3–8min", max_seconds: 480}
     - {label: "8–20min", max_seconds: 1200}
     - {label: "20min+", max_seconds: null}
+
+# Niche validation (022, DESIGN.md §5.3): how `scout validate` samples a niche.
+niche_validation:
+  # A sampled channel is "small" (a newcomer) when it has fewer subscribers than this ...
+  small_subs_max: 10000
+  # ... AND was created within this many days. Both, not either.
+  small_age_days: 365
+  # Searches look back this far (publishedAfter = now - lookback_days).
+  lookback_days: 365
+  # At most this many distinct channels are sampled, the most-hit first.
+  max_channels: 80
+  # After this many searches, stop if they already found max_channels distinct channels.
+  early_stop_after_searches: 4
+  # Newest uploads fetched per sampled channel (one playlist page, one videos call).
+  videos_per_channel: 30
+  # search.list relevanceLanguage (free): the scout looks for English-language niches.
+  language: en
