@@ -80,6 +80,22 @@ ul.observations li { margin: 4px 0; }
 .competitor-card { margin: 10px 0; }
 .competitor-card h4 { margin: 0 0 6px; font-size: 15px; }
 .competitor-card h5 { margin: 10px 0 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
+/* Niches (025) */
+.niche-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 4px 0 8px; }
+.niche-controls input { width: 5em; font: inherit; }
+button.expand { border: none; background: none; color: var(--muted); padding: 0 4px 0 0; margin: 0; cursor: pointer; }
+.badge { display: inline-block; font-size: 11px; line-height: 1.5; padding: 0 6px; margin: 0 4px 2px 0; border-radius: 9px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.badge-disqualified { border-color: var(--series-8); color: var(--series-8); }
+.badge-low_confidence { border-color: var(--series-4); color: var(--fg); }
+td.trend { text-align: center; }
+tr.niche-sample > td { background: var(--bg); }
+.sample-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px 24px; }
+@media (max-width: 700px) { .sample-grid { grid-template-columns: minmax(0, 1fr); } }
+.sample-grid h4 { margin: 4px 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+ul.sample-channels { margin: 0; padding-left: 18px; }
+.cov-automated { color: var(--series-6); }
+.cov-manual { color: var(--series-8); }
+.waiting table { color: var(--muted); }
 footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(--muted); font-size: 13px; }
 </style>
 </head>
@@ -96,6 +112,7 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
     {% endif %}
     <div><dt>Quota today</dt><dd>{{ d.quota_today | number }} units</dd></div>
     <div><dt>Yesterday</dt><dd>{{ d.quota_yesterday | number }} units</dd></div>
+    <div><dt>Niches</dt><dd>{{ d.niche_counts.get("scored", 0) }} niches scored · {{ d.niche_counts.get("tracking", 0) }} tracking · {{ d.niche_counts.get("shelved", 0) }} shelved</dd></div>
     <div><dt>Last run</dt><dd>
       {%- if d.last_run %}{{ d.last_run.kind }}: {{ d.last_run.status or "running" }} ({{ d.last_run.started_at }}){% else %}none yet{% endif -%}
     </dd></div>
@@ -228,8 +245,8 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
   "use strict";
   // Review buttons: POST to `ytscout serve`, then reload. Opened from file:// there is no
   // server to post to, so say how to start one instead.
-  var note = document.getElementById("serve-note");
   var HINT = "start `ytscout serve` and open http://127.0.0.1:8765/";
+  var note = null;
   function say(text) {
     if (!note) { return; }
     note.textContent = text;
@@ -238,6 +255,8 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
   document.addEventListener("click", function (ev) {
     var btn = ev.target.closest ? ev.target.closest("button[data-decision]") : null;
     if (!btn) { return; }
+    var section = btn.closest("section");
+    note = (section && section.querySelector("p.note[role=status]")) || document.getElementById("serve-note");
     if (location.protocol !== "http:") { say(HINT); return; }
     btn.disabled = true;
     fetch("/decide", {
@@ -254,6 +273,46 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
       say(HINT);
       btn.disabled = false;
     });
+  });
+})();
+</script>
+<script>
+(function () {
+  "use strict";
+  // Niches (025): Shorts / Long-form toggle, "opportunity >=" filter, expandable sample rows.
+  var buttons = document.querySelectorAll("button[data-niche-format]");
+  Array.prototype.forEach.call(buttons, function (btn) {
+    btn.addEventListener("click", function () {
+      var want = btn.getAttribute("data-niche-format");
+      Array.prototype.forEach.call(buttons, function (b) {
+        b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-niche-format-panel]"), function (p) {
+        p.hidden = p.getAttribute("data-niche-format-panel") !== want;
+      });
+    });
+  });
+  function detail(row) { return document.getElementById("niche-sample-" + row.getAttribute("data-niche-id")); }
+  var input = document.getElementById("niche-min-opp");
+  function filter() {
+    var min = parseFloat(input.value);
+    if (isNaN(min)) { min = 0; }
+    Array.prototype.forEach.call(document.querySelectorAll("tr.niche-row"), function (row) {
+      var hide = parseFloat(row.getAttribute("data-opportunity")) < min;
+      row.hidden = hide;
+      var more = detail(row);
+      if (more && hide) { more.hidden = true; row.querySelector("button.expand").setAttribute("aria-expanded", "false"); }
+    });
+  }
+  if (input) { input.addEventListener("input", filter); filter(); }
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest ? ev.target.closest("button.expand") : null;
+    if (!btn) { return; }
+    var more = detail(btn.closest("tr"));
+    if (!more) { return; }
+    more.hidden = !more.hidden;
+    btn.setAttribute("aria-expanded", more.hidden ? "false" : "true");
+    btn.textContent = more.hidden ? "▸" : "▾";
   });
 })();
 </script>

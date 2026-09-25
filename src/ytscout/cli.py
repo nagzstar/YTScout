@@ -1238,7 +1238,11 @@ def cmd_serve(args: argparse.Namespace, _extras: list[str]) -> int:
     out = root / dashboard.DEFAULT_OUT_RELPATH
     try:
         server = serve_mod.make_server(
-            db_path, out, db_path.parent / serve_mod.DECISIONS_FILENAME, port=args.port
+            db_path,
+            out,
+            db_path.parent / serve_mod.DECISIONS_FILENAME,
+            port=args.port,
+            context=dashboard.niche_context(root),
         )
     except OSError as exc:
         print(f"serve: cannot listen on 127.0.0.1:{args.port}: {exc}", file=sys.stderr)
@@ -1270,12 +1274,13 @@ def cmd_dashboard(args: argparse.Namespace, _extras: list[str]) -> int:
         print(f"dashboard: could not read {db_path}: {exc}", file=sys.stderr)
         return EXIT_ERROR
     try:
-        dash = dashboard.build(conn, out)
+        dash = dashboard.build(conn, out, context=dashboard.niche_context(root))
     finally:
         conn.close()
     print(
         f"dashboard: wrote {out} ({out.stat().st_size:,} bytes; {len(dash.own_videos)} own "
-        f"videos, {len(dash.candidates)} candidates, {len(dash.approved)} approved)"
+        f"videos, {len(dash.candidates)} candidates, {len(dash.approved)} approved, "
+        f"{dash.niche_counts.get('scored', 0)} niches scored)"
     )
     return EXIT_OK
 

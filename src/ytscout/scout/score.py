@@ -55,6 +55,7 @@ def build_sample(
                 views=row["views"],
                 published_at=parse_dt(row["published_at"]),
                 duration_s=row["duration_s"],
+                video_id=row["id"],
             )
         )
     channels = []

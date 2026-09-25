@@ -16,11 +16,13 @@ FORMATS: tuple[str, ...] = ("shorts", "longform")
 
 @dataclass(frozen=True)
 class VideoSample:
-    """One video: its latest view count, publish date and duration."""
+    """One video: its latest view count, publish date and duration. ``video_id`` only lets
+    the dashboard (025) link an outlier; the scorers never read it."""
 
     views: int
     published_at: datetime
     duration_s: int | None = None
+    video_id: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

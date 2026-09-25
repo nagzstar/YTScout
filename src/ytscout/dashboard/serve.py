@@ -17,7 +17,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
-from ytscout.dashboard.build import build
+from ytscout.dashboard.build import NicheContext, build
 from ytscout.store import connect, now_utc, read_copy, repo
 
 HOST = "127.0.0.1"
@@ -32,8 +32,16 @@ class ReviewServer(HTTPServer):
     Single-threaded on purpose: one click at a time means one writer at a time.
     """
 
-    def __init__(self, port: int, db_path: Path, out: Path, decisions_path: Path) -> None:
+    def __init__(
+        self,
+        port: int,
+        db_path: Path,
+        out: Path,
+        decisions_path: Path,
+        context: NicheContext | None = None,
+    ) -> None:
         self.db_path = Path(db_path)
+        self.context = context
         self.out = Path(out)
         self.decisions_path = Path(decisions_path)
         self.out.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +56,7 @@ class ReviewServer(HTTPServer):
         """Render the dashboard from a read-only copy of the DB."""
         conn = read_copy(self.db_path)
         try:
-            build(conn, self.out)
+            build(conn, self.out, context=self.context)
         finally:
             conn.close()
 
@@ -166,7 +174,11 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 
 
 def make_server(
-    db_path: Path, out: Path, decisions_path: Path, port: int = DEFAULT_PORT
+    db_path: Path,
+    out: Path,
+    decisions_path: Path,
+    port: int = DEFAULT_PORT,
+    context: NicheContext | None = None,
 ) -> ReviewServer:
     """A ready ``ReviewServer`` on 127.0.0.1 (``port=0`` picks a free port)."""
-    return ReviewServer(port, db_path, out, decisions_path)
+    return ReviewServer(port, db_path, out, decisions_path, context)

@@ -1,5 +1,113 @@
 <section id="niches">
   <h2>Niches</h2>
-  {# Placeholder: issue 025 fills this section. #}
-  <p class="empty">Nothing yet.</p>
+  {% set scored = d.niches.values() | map("length") | sum if d.niches else 0 %}
+  {% if not scored %}
+  <p class="empty">Nothing yet. Run <code>ytscout scout validate</code>, <code>scout tag</code>, then <code>score --niches</code>.</p>
+  {% else %}
+  <p class="muted">Latest <code>score --niches</code> row per niche, ranked by £ per manual hour. Numbers to 2 significant figures; hover for the full value. Trend: opportunity against the newest score ≥ 28 days older.</p>
+  <p id="niche-serve-note" class="note" role="status" hidden></p>
+  <div class="niche-controls">
+    <div class="toggle" role="group" aria-label="Format">
+      {% for fmt in d.niches %}
+      <button type="button" data-niche-format="{{ fmt }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ "Shorts" if fmt == "shorts" else "Long-form" }} ({{ d.niches[fmt] | length }})</button>
+      {% endfor %}
+    </div>
+    <label class="muted">opportunity ≥ <input type="number" id="niche-min-opp" value="0" min="0" max="1" step="0.05"></label>
+  </div>
+  {% for fmt, rows in d.niches.items() %}
+  <div data-niche-format-panel="{{ fmt }}"{% if not loop.first %} hidden{% endif %}>
+    {% if rows %}
+    <div class="table-wrap">
+    <table class="niches">
+      <thead><tr>
+        <th>Niche</th><th>Category</th><th class="num">Score (£/manual h)</th><th class="num">Opportunity</th>
+        <th class="num">Est £/month p50 (p25–p75)</th><th class="num">Manual h/month</th><th>Flags</th><th>Trend</th><th>Status</th><th>Decide</th>
+      </tr></thead>
+      <tbody>
+      {% for n in rows %}
+        <tr class="niche-row" data-niche-id="{{ n.id }}" data-opportunity="{{ n.opportunity if n.opportunity is not none else 0 }}">
+          <td><button type="button" class="expand" aria-expanded="false" aria-controls="niche-sample-{{ n.id }}" title="Show the sample">▸</button> {{ n.label }}</td>
+          <td>{{ n.category or "–" }}</td>
+          <td class="num" title="{{ n.score | full }}"><strong>{{ n.score | sig2 }}</strong></td>
+          <td class="num" title="{{ n.opportunity | full }}">{{ n.opportunity | sig2 }}</td>
+          <td class="num" title="{{ n.est_p50 | full }} ({{ n.est_p25 | full }}–{{ n.est_p75 | full }})">£{{ n.est_p50 | sig2 }} (£{{ n.est_p25 | sig2 }}–£{{ n.est_p75 | sig2 }})</td>
+          <td class="num" title="{{ n.hours | full }}">{{ n.hours | sig2 if n.hours is not none else "∞" }}</td>
+          <td>{% for f in n.flags %}<span class="badge badge-{{ f }}">{{ f }}</span>{% else %}–{% endfor %}</td>
+          <td class="trend">{{ n.trend }}</td>
+          <td>{{ n.status or "–" }}</td>
+          <td class="actions">
+            <button type="button" data-kind="niche" data-id="{{ n.id }}" data-decision="track">Track</button>
+            <button type="button" data-kind="niche" data-id="{{ n.id }}" data-decision="shelve">Shelve</button>
+          </td>
+        </tr>
+        <tr class="niche-sample" id="niche-sample-{{ n.id }}" hidden>
+          <td colspan="10">
+            <div class="sample-grid">
+              <div>
+                <h4>Small channels and their outliers</h4>
+                {% if n.sample.channels is none %}
+                <p class="empty">Unavailable: <code>config/scoring.yaml</code> did not load.</p>
+                {% elif not n.sample.channels %}
+                <p class="empty">No small channels in the sample.</p>
+                {% else %}
+                <ul class="sample-channels">
+                  {% for c in n.sample.channels %}
+                  <li><a href="{{ channel_url }}{{ c.id | urlencode }}">{{ c.title }}</a> <span class="muted">{{ c.subs | number }} subs</span>
+                    {% if c.outliers %}
+                    <ul class="evidence">
+                      {% for v in c.outliers %}
+                      <li><a href="{{ watch_url }}{{ v.id | urlencode }}">{{ v.title }}</a> <span class="muted">{{ v.views | number }} views</span></li>
+                      {% endfor %}
+                    </ul>
+                    {% else %}<span class="muted"> · no outliers</span>{% endif %}
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% endif %}
+              </div>
+              <div>
+                <h4>Queries</h4>
+                {% if n.sample.queries %}<ul class="reasons">{% for q in n.sample.queries %}<li>{{ q }}</li>{% endfor %}</ul>{% else %}<p class="empty">None stored.</p>{% endif %}
+                <h4>Required steps</h4>
+                {% if n.sample.steps %}
+                <ul class="reasons">
+                  {% for s in n.sample.steps %}
+                  <li>{{ s.id }}: {% if s.coverage %}<span class="cov cov-{{ s.coverage }}">{{ s.coverage }}</span>{% elif n.sample.coverage_known %}not in the audit{% else %}coverage unknown{% endif %}</li>
+                  {% endfor %}
+                </ul>
+                {% else %}<p class="empty">None tagged.</p>{% endif %}
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="empty">No {{ "Shorts" if fmt == "shorts" else "long-form" }} niche scored yet.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+  <h3>Waiting ({{ d.niches_waiting | length }})</h3>
+  {% if d.niches_waiting %}
+  <div class="table-wrap waiting">
+  <table>
+    <thead><tr><th>Niche</th><th>Format</th><th>Category</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for n in d.niches_waiting %}
+      <tr data-niche-id="{{ n.id }}">
+        <td>{{ n.label or n.topic }}</td>
+        <td>{{ "Shorts" if n.format == "shorts" else "Long-form" }}</td>
+        <td>{{ n.topic_category or "–" }}</td>
+        <td>{{ n.status or "–" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="empty">No niche waiting to be scored.</p>
+  {% endif %}
 </section>

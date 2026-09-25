@@ -9,6 +9,7 @@ the DB is never written here.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -18,10 +19,20 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from ytscout.audit import COVERAGE_RELPATH, AuditError, PipelineCoverage, load_coverage
 from ytscout.score import WINDOWS, load_videos
+from ytscout.scoring import opportunity
+from ytscout.scoring.config import (
+    SCORING_RELPATH,
+    ScoringConfigError,
+    load_scoring,
+    niche_scoring_config,
+)
 from ytscout.scoring.metrics import FORMATS, month_keys, monthly_views, top_bucket
+from ytscout.scout.score import build_sample
 from ytscout.store import repo
 from ytscout.store.db import to_utc_iso, utc_now
+from ytscout.youtube import parse_dt
 from ytscout.youtube.quota import today_pacific
 
 PACKAGE_DIR = Path(__file__).parent
@@ -61,6 +72,36 @@ class Dashboard:
     # The latest competitor analysis (017): status, run_at, hashes, the grounded analysis
     # and the id → title maps the Findings section links with. None when never run.
     findings: dict[str, Any] | None = None
+    # {format: [latest niche_scores row per niche, best score first]} (025).
+    niches: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    # Niches with no niche_scores row yet (proposed, validated): the "waiting" table.
+    niches_waiting: list[dict[str, Any]] = field(default_factory=list)
+    niche_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class NicheContext:
+    """What a niche row's sample needs beyond the DB: ``niche_scoring`` (small channels,
+    outliers) and the pipeline coverage. Either may be ``None``; that part is left out."""
+
+    cfg: dict[str, Any] | None = None
+    coverage: PipelineCoverage | None = None
+
+
+def niche_context(root: Path) -> NicheContext:
+    """Read ``config/scoring.yaml`` and ``config/pipeline_coverage.yaml`` under ``root``. A
+    missing or invalid file drops only its part of the sample, never the build."""
+    cfg: dict[str, Any] | None = None
+    coverage: PipelineCoverage | None = None
+    try:
+        cfg = niche_scoring_config(load_scoring(root / SCORING_RELPATH))
+    except (OSError, ScoringConfigError):
+        pass
+    try:
+        coverage = load_coverage(root / COVERAGE_RELPATH)
+    except (OSError, AuditError):
+        pass
+    return NicheContext(cfg, coverage)
 
 
 def _rows(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -99,7 +140,9 @@ def _competitor(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def load(conn: sqlite3.Connection, now: datetime | None = None) -> Dashboard:
+def load(
+    conn: sqlite3.Connection, now: datetime | None = None, context: NicheContext | None = None
+) -> Dashboard:
     """Read what the dashboard shows. ``now`` is an aware datetime (default: now)."""
     moment = utc_now() if now is None else now
     today = today_pacific(moment)
@@ -162,6 +205,7 @@ def load(conn: sqlite3.Connection, now: datetime | None = None) -> Dashboard:
     ]
     _load_metrics(conn, dash, moment)
     _load_findings(conn, dash)
+    _load_niches(conn, dash, context or NicheContext())
     return dash
 
 
@@ -283,6 +327,134 @@ def _load_metrics(conn: sqlite3.Connection, dash: Dashboard, now: datetime) -> N
     dash.monthly = {"labels": month_keys(now, CHART_MONTHS), "series": shown}
 
 
+# --- niches (025) ----------------------------------------------------------------------------
+
+TREND_MIN_DAYS = 28
+TREND_STEP = 0.05
+# `track`/`shelve` are the stored decision values; DESIGN.md §5.4 names them tracking/shelved.
+NICHE_TRACKING = ("track", "tracking")
+NICHE_SHELVED = ("shelve", "shelved")
+
+
+def _json_list(raw: Any) -> list[str]:
+    try:
+        value = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    return [str(v) for v in value] if isinstance(value, list) else []
+
+
+def trend(history: list[dict[str, Any]]) -> str:
+    """▲/▼/▬ from the latest ``opportunity`` against the newest row at least 28 days older
+    than it (±0.05); "—" when there is no such row. ``history`` is oldest first."""
+    latest = history[-1]
+    cutoff = parse_dt(latest["scored_at"]) - timedelta(days=TREND_MIN_DAYS)
+    older = [r for r in history[:-1] if parse_dt(r["scored_at"]) <= cutoff]
+    if not older or latest["opportunity"] is None or older[-1]["opportunity"] is None:
+        return "—"
+    delta = round(latest["opportunity"] - older[-1]["opportunity"], 9)
+    if delta >= TREND_STEP:
+        return "▲"
+    if delta <= -TREND_STEP:
+        return "▼"
+    return "▬"
+
+
+def _niche_sample(
+    conn: sqlite3.Connection, niche: dict[str, Any], scored_at: str, context: NicheContext
+) -> dict[str, Any]:
+    """The expanded row: small channels and their outliers (as of the score), the queries,
+    the required steps and what the pipeline covers of each."""
+    coverage = context.coverage
+    sample: dict[str, Any] = {
+        "queries": _json_list(niche["queries_json"]),
+        "steps": [
+            {
+                "id": step,
+                "coverage": coverage.steps[step].coverage
+                if coverage is not None and step in coverage.steps
+                else None,
+            }
+            for step in _json_list(niche["required_steps_json"])
+        ],
+        "coverage_known": coverage is not None,
+        "channels": None,
+    }
+    if context.cfg is None:
+        return sample
+    cfg = context.cfg
+    ns = build_sample(conn, niche["id"], cfg, now=parse_dt(scored_at))
+    channels = []
+    for ch in opportunity.small_channels(ns, cfg):
+        row = repo.get_channel(conn, ch.channel_id)
+        outliers = sorted(opportunity.outlier_videos(ch, ns, cfg), key=lambda v: -v.views)
+        channels.append(
+            {
+                "id": ch.channel_id,
+                "title": (row["title"] if row else None) or ch.channel_id,
+                "subs": ch.subs,
+                "outliers": [{"id": v.video_id, "views": v.views} for v in outliers],
+            }
+        )
+    titles = repo.video_titles(conn, (v["id"] for c in channels for v in c["outliers"]))
+    for c in channels:
+        for v in c["outliers"]:
+            v["title"] = titles.get(v["id"]) or v["id"]
+    sample["channels"] = channels
+    return sample
+
+
+def _gbp_band(latest: dict[str, Any], views: float | None) -> float | None:
+    """A views quantile in £/month: est = p50 views / 1000 × rpm_gbp, so £ scales with views."""
+    if views is None or latest["rpm_gbp"] is None:
+        return None
+    return views / 1000.0 * latest["rpm_gbp"]
+
+
+def _load_niches(conn: sqlite3.Connection, dash: Dashboard, context: NicheContext) -> None:
+    """Latest ``niche_scores`` row per niche, split by format and ranked by score; niches
+    without a score go to the waiting list."""
+    niches = _rows(conn, "SELECT * FROM niches ORDER BY id")
+    if not niches:
+        return
+    history: dict[int, list[dict[str, Any]]] = {}
+    for row in _rows(conn, "SELECT * FROM niche_scores ORDER BY scored_at, id"):
+        history.setdefault(row["niche_id"], []).append(row)
+    tables: dict[str, list[dict[str, Any]]] = {fmt: [] for fmt in FORMATS}
+    for niche in niches:
+        rows = history.get(niche["id"])
+        if not rows:
+            dash.niches_waiting.append(niche)
+            continue
+        latest = rows[-1]
+        tables.setdefault(niche["format"], []).append(
+            {
+                "id": niche["id"],
+                "label": niche["label"] or niche["topic"],
+                "category": niche["topic_category"],
+                "status": niche["status"],
+                "scored_at": latest["scored_at"],
+                "score": latest["score"],
+                "opportunity": latest["opportunity"],
+                "est_p50": latest["est_monthly_gbp"],
+                "est_p25": _gbp_band(latest, latest["newcomer_monthly_views_p25"]),
+                "est_p75": _gbp_band(latest, latest["newcomer_monthly_views_p75"]),
+                "hours": latest["manual_hours_per_month"],
+                "flags": _json_list(latest["confidence_flags_json"]),
+                "trend": trend(rows),
+                "sample": _niche_sample(conn, niche, latest["scored_at"], context),
+            }
+        )
+    for ranked in tables.values():
+        ranked.sort(key=lambda r: (-(r["score"] or 0.0), r["id"]))
+    dash.niches = tables
+    dash.niche_counts = {
+        "scored": sum(len(r) for r in tables.values()),
+        "tracking": sum(1 for n in niches if n["status"] in NICHE_TRACKING),
+        "shelved": sum(1 for n in niches if n["status"] in NICHE_SHELVED),
+    }
+
+
 # --- rendering -----------------------------------------------------------------------------
 
 
@@ -300,6 +472,25 @@ def _duration(seconds: Any) -> str:
 
 def _decimal(value: Any, places: int = 2) -> str:
     return "–" if value is None else f"{value:,.{places}f}"
+
+
+def _sig2(value: Any) -> str:
+    """Two significant figures: 0.0578 → "0.058", 1.04 → "1.0", 13,300 → "13,000"."""
+    if value is None:
+        return "–"
+    number = float(value)
+    if number == 0 or not math.isfinite(number):
+        return f"{number:g}"
+    rounded = float(f"{number:.2g}")
+    if abs(rounded) >= 10:
+        return f"{rounded:,.0f}"
+    places = max(0, 1 - math.floor(math.log10(abs(rounded))))
+    return f"{rounded:.{places}f}"
+
+
+def _full(value: Any) -> str:
+    """The tooltip behind a 2-significant-figure cell."""
+    return "" if value is None else f"{float(value):.6g}"
 
 
 def _percent(value: Any) -> str:
@@ -338,6 +529,8 @@ def environment() -> Environment:
     env.filters["clock"] = _clock
     env.filters["decimal"] = _decimal
     env.filters["percent"] = _percent
+    env.filters["sig2"] = _sig2
+    env.filters["full"] = _full
     return env
 
 
@@ -348,9 +541,14 @@ def render(dash: Dashboard) -> str:
     )
 
 
-def build(conn: sqlite3.Connection, out: Path, now: datetime | None = None) -> Dashboard:
+def build(
+    conn: sqlite3.Connection,
+    out: Path,
+    now: datetime | None = None,
+    context: NicheContext | None = None,
+) -> Dashboard:
     """Render the dashboard from ``conn`` into ``out`` (parents created); return its data."""
-    dash = load(conn, now)
+    dash = load(conn, now, context)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(dash), encoding="utf-8", newline="\n")
     return dash
