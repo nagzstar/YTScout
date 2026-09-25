@@ -21,6 +21,7 @@ from ytscout.collect.discover import (
     queries_within,
     screen_channel,
     screen_language,
+    screen_seeds,
     screen_views,
     subs_band,
     worst_case_units,
@@ -493,9 +494,13 @@ def test_cli_dry_run_plans_default_searches_and_writes_nothing(
     before = db.read_bytes()
     assert main(["discover", "--dry-run"]) == EXIT_OK
     out = capsys.readouterr().out
-    assert "planned: 16 searches (1600 units) + 1 own channels.list = 1601 units" in out
+    # 036: "top 5 dangerous" and "top 5 deadliest" carry no topic word and are named
+    assert "queries (6):" in out
+    assert "planned: 12 searches (1200 units) + 1 own channels.list = 1201 units" in out
     assert "top 5 dangerous animals" in out
-    assert "worst case for this plan: 1633 units" in out
+    assert "dropped seeds (2):\n  top 5 dangerous  (no topic word)\n" in out
+    assert "  top 5 deadliest  (no topic word)\n" in out
+    assert "worst case for this plan: 1225 units" in out
     assert db.read_bytes() == before
 
 
@@ -518,3 +523,23 @@ def test_cli_max_units_too_small_for_one_query(
 ) -> None:
     assert main(["discover", "--max-units", "150"]) == EXIT_ERROR
     assert "too small" in capsys.readouterr().err
+
+
+# --- seed screen (036) --------------------------------------------------------------------
+
+
+def test_seed_without_a_topic_word_is_dropped() -> None:
+    kept, dropped = screen_seeds(
+        ["top 5 land animals", "top 5 animals", "top 5 land"], CFG.topic_words
+    )
+    assert kept == ["top 5 land animals", "top 5 animals"]
+    assert dropped == [("top 5 land", "no topic word")]
+
+
+def test_dropped_seeds_do_not_take_a_query_slot(conn: sqlite3.Connection) -> None:
+    titles = repo.recent_titles(conn, OWN, 50)
+    all_seeds = seed_queries(titles, [], 50)
+    kept, dropped = screen_seeds(all_seeds, CFG.topic_words)
+    result, _ = run(conn, FakeTransport(fixtures()), max_queries=len(kept))
+    assert result.queries == kept
+    assert result.dropped_queries == dropped

@@ -1328,6 +1328,10 @@ def _print_discovery_plan(result: DiscoveryResult, transport: DryRunTransport) -
     print(f"queries ({len(result.queries)}):")
     for query in result.queries:
         print(f"  {query}")
+    if result.dropped_queries:
+        print(f"dropped seeds ({len(result.dropped_queries)}):")
+        for query, why in result.dropped_queries:
+            print(f"  {query}  ({why})")
     searches = sum(1 for call in transport.calls if call[0] == "search")
     print(
         f"planned: {searches} searches ({searches * 100} units) + 1 own channels.list"

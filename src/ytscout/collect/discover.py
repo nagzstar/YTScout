@@ -13,8 +13,9 @@ from __future__ import annotations
 import html
 import math
 import sqlite3
+import sys
 from collections import Counter
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -103,6 +104,7 @@ class Verdict:
 @dataclass
 class DiscoveryResult:
     queries: list[str] = field(default_factory=list)
+    dropped_queries: list[tuple[str, str]] = field(default_factory=list)  # (query, why)
     searches: int = 0
     candidates: dict[str, Candidate] = field(default_factory=dict)
     verdicts: dict[str, Verdict] = field(default_factory=dict)
@@ -193,6 +195,24 @@ def screen_channel(
         and bool(topic)
     )
     return verdict
+
+
+def screen_seeds(
+    queries: Sequence[str], topic_words: Iterable[str]
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Split seed queries into those carrying a topic word and ``(query, why)`` drops (036).
+
+    A seed built from a content word alone (``top 5 land``) searches the wrong subject: in
+    009 it paid 200 units a run for NFL rankings and property listings."""
+    topics = set(topic_words)
+    kept: list[str] = []
+    dropped: list[tuple[str, str]] = []
+    for query in queries:
+        if topics & set(tokens(query)):
+            kept.append(query)
+        else:
+            dropped.append((query, "no topic word"))
+    return kept, dropped
 
 
 def topic_words(c: Candidate, cfg: DiscoveryConfig) -> list[str]:
@@ -319,7 +339,11 @@ def discover(
         if own:
             branding = (own[0].get("brandingSettings") or {}).get("channel") or {}
             keywords = parse_keywords(branding.get("keywords"))
-        result.queries = seed_queries(titles, keywords, max_queries)
+        # Screen before capping, so a dropped seed never costs a surviving one its slot.
+        seeds, result.dropped_queries = screen_seeds(
+            seed_queries(titles, keywords, sys.maxsize), cfg.topic_words
+        )
+        result.queries = seeds[: max(0, max_queries)]
 
         published_after = utc_now() - LOOKBACK
         for query in result.queries:
