@@ -918,8 +918,13 @@ def _collect_transcripts(args: argparse.Namespace) -> int:
             )
         print(
             f"collect --transcripts: ok {counts.ok}, unavailable {counts.unavailable}, "
-            f"error {counts.error}"
+            f"error {counts.error}, blocked {counts.blocked}"
         )
+        if counts.stopped_after is not None:
+            print(
+                f"collect --transcripts: stopped after {counts.stopped_after} consecutive "
+                f"IpBlocked; {counts.untouched} candidates untouched"
+            )
         for video_id, status, detail in counts.failures:
             print(f"  {video_id}: {status} ({detail})", file=sys.stderr)
         return EXIT_OK

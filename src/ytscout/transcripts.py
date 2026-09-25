@@ -10,6 +10,9 @@ it can be swapped or removed without touching anything else. Tests replace ``_fe
 * ``ok`` — a track was found and fetched;
 * ``unavailable`` — captions are disabled, there is no track, or the video is gone. Final:
   the collector never asks again;
+* ``blocked`` — YouTube refused the request (``IpBlocked``/``RequestBlocked``). One attempt,
+  no retries: waiting seconds does not lift a block. The collector leaves the video alone
+  for a week (039);
 * ``error`` — network, rate limit or anything unexpected, after 3 retries with backoff
   (1 s, 4 s, 16 s). The next weekly run tries again.
 """
@@ -22,7 +25,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-STATUSES = ("ok", "unavailable", "error")
+STATUSES = ("ok", "unavailable", "blocked", "error")
 BACKOFF_SECONDS: tuple[float, ...] = (1.0, 4.0, 16.0)
 DEFAULT_PAUSE_SECONDS = 1.5
 # Stored in the ``language`` key column when no track was fetched (it is NOT NULL).
@@ -92,6 +95,15 @@ def _is_final(exc: BaseException) -> bool:
     )
 
 
+def _is_blocked(exc: BaseException) -> bool:
+    """YouTube refused this IP (``IpBlocked`` is a ``RequestBlocked``): retrying does not help."""
+    try:
+        from youtube_transcript_api import RequestBlocked
+    except ImportError:  # pragma: no cover - the library is a hard dependency
+        return False
+    return isinstance(exc, RequestBlocked)
+
+
 # Seams: tests replace these. ``_fetcher(video_id)`` returns the video's tracks.
 _fetcher: Callable[[str], Iterable[Track]] = _library_fetcher
 _sleep: Callable[[float], None] = time.sleep
@@ -132,8 +144,9 @@ def _attempt(video_id: str) -> Transcript:
 
 
 def fetch(video_id: str, backoff: Sequence[float] = BACKOFF_SECONDS) -> Transcript:
-    """One video's transcript. Unavailable is final at once; anything else is retried
-    ``len(backoff)`` times, sleeping ``backoff[i]`` before retry ``i``, then ``error``."""
+    """One video's transcript. Unavailable is final at once and a block is ``blocked`` at
+    once; anything else is retried ``len(backoff)`` times, sleeping ``backoff[i]`` before
+    retry ``i``, then ``error``."""
     attempts = len(backoff) + 1
     for attempt in range(attempts):
         try:
@@ -142,6 +155,8 @@ def fetch(video_id: str, backoff: Sequence[float] = BACKOFF_SECONDS) -> Transcri
             if _is_final(exc):
                 detail = str(exc) if isinstance(exc, Unavailable) else type(exc).__name__
                 return Transcript(video_id, NO_LANGUAGE, None, None, "unavailable", detail)
+            if _is_blocked(exc):
+                return Transcript(video_id, NO_LANGUAGE, None, None, "blocked", type(exc).__name__)
             if attempt == attempts - 1:
                 return Transcript(video_id, NO_LANGUAGE, None, None, "error", type(exc).__name__)
             _sleep(backoff[attempt])

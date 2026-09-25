@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from youtube_transcript_api import NoTranscriptFound, RequestBlocked, TranscriptsDisabled
+from youtube_transcript_api import IpBlocked, NoTranscriptFound, RequestBlocked, TranscriptsDisabled
 
 from ytscout import transcripts
 from ytscout.cli import EXIT_OK, main
-from ytscout.collect.transcripts import collect_transcripts
+from ytscout.collect.transcripts import BLOCK_STREAK_LIMIT, collect_transcripts
 from ytscout.store import connect, repo
+from ytscout.store.db import to_utc_iso
 
 OWN = "UCown"
 
@@ -124,7 +126,7 @@ def test_no_tracks_is_unavailable(monkeypatch: pytest.MonkeyPatch, sleeps: list[
     assert transcripts.fetch("v1").status == "unavailable"
 
 
-@pytest.mark.parametrize("exc", [RequestBlocked("v1"), ConnectionError("reset"), OSError("x")])
+@pytest.mark.parametrize("exc", [ConnectionError("reset"), OSError("x")])
 def test_error_retries_three_times_with_backoff(
     monkeypatch: pytest.MonkeyPatch, sleeps: list[float], exc: Exception
 ) -> None:
@@ -148,6 +150,17 @@ def test_error_then_success_recovers(monkeypatch: pytest.MonkeyPatch, sleeps: li
     t = transcripts.fetch("v1")
     assert t.status == "ok"
     assert sleeps == [1.0, 4.0]
+
+
+@pytest.mark.parametrize("exc", [IpBlocked("v"), RequestBlocked("v")])
+def test_block_is_one_attempt_no_backoff(
+    monkeypatch: pytest.MonkeyPatch, sleeps: list[float], exc: Exception
+) -> None:
+    fake = use(monkeypatch, {"v": exc})
+    result = transcripts.fetch("v")
+    assert (result.status, result.detail) == ("blocked", type(exc).__name__)
+    assert fake.calls == ["v"]
+    assert sleeps == []
 
 
 # --- collector ----------------------------------------------------------------------------
@@ -235,6 +248,78 @@ def test_second_run_skips_ok_and_unavailable_and_retries_errors(
     assert third.calls == []
 
 
+def _set_fetched_at(conn: sqlite3.Connection, video_id: str, days_ago: int) -> None:
+    when = to_utc_iso(datetime.now(UTC) - timedelta(days=days_ago))
+    with conn:
+        conn.execute("UPDATE transcripts SET fetched_at = ? WHERE video_id = ?", (when, video_id))
+
+
+def test_blocked_rows_wait_a_week_and_errors_retry_every_run(
+    monkeypatch: pytest.MonkeyPatch, sleeps: list[float]
+) -> None:
+    conn = seeded()
+    use(
+        monkeypatch,
+        {
+            "o1": IpBlocked("o1"),
+            "a1": RequestBlocked("a1"),
+            "o2": ConnectionError("down"),
+            "w1": [FakeTrack("en", True)],
+        },
+    )
+    first = collect_transcripts(conn, pause_seconds=0)
+    assert (first.ok, first.blocked, first.error) == (1, 2, 1)
+    assert repo.get_transcripts(conn, "o1")[0]["status"] == "blocked"
+
+    # Next week's run, three days later: blocked rows sit out, the error row is retried.
+    _set_fetched_at(conn, "o1", 3)
+    _set_fetched_at(conn, "a1", 8)
+    assert repo.transcript_candidates(conn, 100) == ["a1", "o2"]
+
+    fake = use(monkeypatch, {"a1": [FakeTrack("en", False, ["back"])], "o2": IpBlocked("o2")})
+    second = collect_transcripts(conn, pause_seconds=0)
+    assert fake.calls == ["a1", "o2"]
+    assert (second.ok, second.blocked) == (1, 1)
+    assert [(r["status"], r["language"]) for r in repo.get_transcripts(conn, "a1")] == [
+        ("ok", "en")
+    ]  # blocked row cleared by the ok result
+    assert repo.get_transcripts(conn, "o2")[0]["status"] == "blocked"  # error became blocked
+    assert repo.transcript_candidates(conn, 100) == []
+
+
+def test_circuit_breaker_stops_after_consecutive_blocks(
+    monkeypatch: pytest.MonkeyPatch, sleeps: list[float]
+) -> None:
+    conn = seeded()  # candidates o1, a1, o2, w1
+    monkeypatch.setattr("ytscout.collect.transcripts.BLOCK_STREAK_LIMIT", 2)
+    fake = use(monkeypatch, {"o1": IpBlocked("o1"), "a1": RequestBlocked("a1")})
+    counts = collect_transcripts(conn, pause_seconds=0.5)
+    assert fake.calls == ["o1", "a1"]
+    assert (counts.stopped_after, counts.untouched, counts.blocked) == (2, 2, 2)
+    assert sleeps == []  # no pause after a block, no backoff for one
+    assert repo.get_transcripts(conn, "o2") == []  # untouched: no row written
+
+
+def test_circuit_breaker_streak_resets_on_any_other_result(
+    monkeypatch: pytest.MonkeyPatch, sleeps: list[float]
+) -> None:
+    conn = seeded()
+    monkeypatch.setattr("ytscout.collect.transcripts.BLOCK_STREAK_LIMIT", 2)
+    fake = use(
+        monkeypatch,
+        {
+            "o1": IpBlocked("o1"),
+            "a1": [FakeTrack("en", True)],
+            "o2": IpBlocked("o2"),
+            "w1": IpBlocked("w1"),
+        },
+    )
+    counts = collect_transcripts(conn, pause_seconds=0.5)
+    assert fake.calls == ["o1", "a1", "o2", "w1"]
+    assert counts.stopped_after is None  # the streak reached 2 on the last candidate
+    assert sleeps == [0.5]  # only the pause after a1's ok
+
+
 def test_ok_row_is_never_overwritten() -> None:
     conn = seeded()
     with conn:
@@ -285,7 +370,40 @@ def test_cli_dry_run_lists_ids_and_fetches_nothing(
     assert main(["collect", "--transcripts", "--dry-run", "--limit", "1"]) == EXIT_OK
     out = capsys.readouterr().out
     assert "  o1" in out and "o2" not in out and "candidates: 1" in out
+    assert main(["collect", "--transcripts", "--dry-run"]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert out.index("  o1") < out.index("  o2")  # newest first
     assert fake.calls == []
+
+
+def test_cli_stops_after_five_blocks_without_sleeping(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sleeps: list[float],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    conn = connect(repo_root / "data" / "ytscout.sqlite")
+    ids = [f"v{i:03d}" for i in range(100)]
+    with conn:
+        repo.upsert_channel(conn, OWN, role="own")
+        for i, vid in enumerate(ids):
+            repo.upsert_video(
+                conn, vid, channel_id=OWN, published_at=f"2026-01-01T00:{i // 60:02d}:{i % 60:02d}Z"
+            )
+    conn.close()
+    fake = use(monkeypatch, {vid: IpBlocked(vid) for vid in ids})
+    assert main(["collect", "--transcripts"]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert len(fake.calls) == BLOCK_STREAK_LIMIT == 5
+    assert fake.calls == ids[::-1][:5]  # newest first
+    assert sleeps == []
+    assert (
+        "collect --transcripts: stopped after 5 consecutive IpBlocked; 95 candidates untouched"
+        in out
+    )
+    conn = connect(repo_root / "data" / "ytscout.sqlite")
+    assert conn.execute("SELECT COUNT(*) FROM transcripts").fetchone()[0] == 5
+    conn.close()
 
 
 def test_cli_real_run_prints_counts_and_uses_configured_pause(

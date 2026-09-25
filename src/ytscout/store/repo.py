@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-from ytscout.store.db import now_utc, to_utc_iso
+from ytscout.store.db import now_utc, to_utc_iso, utc_now
 
 CHANNEL_ROLES = ("own", "competitor", "niche_sample")
 CHANNEL_STATUSES = ("approved", "rejected", "watch")
@@ -429,22 +429,28 @@ def upsert_own_traffic(
 
 # --- transcripts --------------------------------------------------------------------------
 
-TRANSCRIPT_STATUSES = ("ok", "unavailable", "error")
+TRANSCRIPT_STATUSES = ("ok", "unavailable", "blocked", "error")
+# A ``blocked`` row keeps its video out of the candidates this long (039).
+BLOCKED_RETRY_AFTER = timedelta(days=7)
 
 
 def transcript_candidates(conn: sqlite3.Connection, limit: int) -> list[str]:
     """Video ids of the own and ``approved``/``watch`` channels with no final transcript row
-    (``ok`` or ``unavailable``), newest first."""
+    (``ok`` or ``unavailable``) and no ``blocked`` row younger than a week, newest first, so
+    fresh videos get a run's budget before old failures are retried."""
+    blocked_before = to_utc_iso(utc_now() - BLOCKED_RETRY_AFTER)
     rows = conn.execute(
         """
         SELECT v.id FROM videos v JOIN channels c ON c.id = v.channel_id
         WHERE (c.role = 'own' OR c.status IN ('approved', 'watch'))
           AND NOT EXISTS (SELECT 1 FROM transcripts t
-                          WHERE t.video_id = v.id AND t.status IN ('ok', 'unavailable'))
+                          WHERE t.video_id = v.id
+                            AND (t.status IN ('ok', 'unavailable')
+                                 OR (t.status = 'blocked' AND t.fetched_at > ?)))
         ORDER BY v.published_at DESC, v.id
         LIMIT ?
         """,
-        (limit,),
+        (blocked_before, limit),
     ).fetchall()
     return [row[0] for row in rows]
 
@@ -459,11 +465,14 @@ def put_transcript(
     status: str,
 ) -> None:
     """Record one fetch attempt. A final result (``ok``/``unavailable``) clears the video's
-    earlier ``error`` rows; an ``ok`` row is never overwritten by a later attempt."""
+    earlier ``error``/``blocked`` rows; an ``ok`` row is never overwritten by a later attempt."""
     if status not in TRANSCRIPT_STATUSES:
         raise ValueError(f"status must be one of {TRANSCRIPT_STATUSES}, got {status!r}")
-    if status != "error":
-        conn.execute("DELETE FROM transcripts WHERE video_id = ? AND status = 'error'", (video_id,))
+    if status in ("ok", "unavailable"):
+        conn.execute(
+            "DELETE FROM transcripts WHERE video_id = ? AND status IN ('error', 'blocked')",
+            (video_id,),
+        )
     conn.execute(
         """
         INSERT INTO transcripts (video_id, language, text, source, status, fetched_at)

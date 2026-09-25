@@ -35,14 +35,14 @@ def transcript_for_packet(conn: sqlite3.Connection, video_id: str) -> tuple[str 
     """``(text, status)``: the ``ok`` transcript's text, else ``None`` and why.
 
     With no ``ok`` row the status is the most final one recorded (``unavailable`` over
-    ``error``), or ``missing`` when transcripts were never attempted.
+    ``blocked`` over ``error``), or ``missing`` when transcripts were never attempted.
     """
     rows = repo.get_transcripts(conn, video_id)
     for row in rows:
         if row["status"] == "ok" and row["text"]:
             return row["text"], "ok"
     statuses = {row["status"] for row in rows}
-    for status in ("unavailable", "error"):
+    for status in ("unavailable", "blocked", "error"):
         if status in statuses:
             return None, status
     return None, TRANSCRIPT_MISSING

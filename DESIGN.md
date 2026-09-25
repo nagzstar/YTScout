@@ -276,6 +276,7 @@ Rules:
 - `youtube-transcript-api` for competitor videos (auto-generated captions are fine).
 - Cache to SQLite; never re-fetch a transcript.
 - Expect breakage. Wrap in retries with backoff; on persistent failure, mark `transcript_status = unavailable` and proceed with titles/descriptions.
+- An IP block (`IpBlocked`/`RequestBlocked`) is not retried: the video is marked `blocked` and sits out for 7 days, and 5 blocks in a row end the run (039).
 
 ### 8.4 Explicitly not used
 - HTML scraping of youtube.com, Social Blade, vidIQ, etc.
