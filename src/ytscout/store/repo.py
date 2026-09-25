@@ -717,6 +717,23 @@ NICHE_STATUS_VALIDATED = "validated"
 NICHE_STATUSES_TRACKING = ("track", "tracking")
 
 
+def tracking_niches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every niche a person decided to track (``track``/``tracking``), oldest first."""
+    marks = ", ".join("?" * len(NICHE_STATUSES_TRACKING))
+    return conn.execute(
+        f"SELECT * FROM niches WHERE status IN ({marks}) ORDER BY id", NICHE_STATUSES_TRACKING
+    ).fetchall()
+
+
+def niche_channel_rows(conn: sqlite3.Connection, niche_id: int) -> list[sqlite3.Row]:
+    """The niche's channels joined to ``channels`` (``id``, ``title``, ``uploads_playlist_id``)."""
+    return conn.execute(
+        "SELECT c.id, c.title, c.uploads_playlist_id FROM niche_channels nc"
+        " JOIN channels c ON c.id = nc.channel_id WHERE nc.niche_id = ? ORDER BY c.id",
+        (niche_id,),
+    ).fetchall()
+
+
 def proposed_niches(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Every ``proposed`` niche in ``created_at`` order (id breaks ties)."""
     return conn.execute(

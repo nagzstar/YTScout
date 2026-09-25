@@ -54,6 +54,7 @@ from ytscout.collect.discover import (
     queries_within,
     worst_case_units,
 )
+from ytscout.collect.niches import NicheRefreshResult, collect_niches, tracked_niches
 from ytscout.collect.transcripts import DEFAULT_LIMIT as DEFAULT_TRANSCRIPT_LIMIT
 from ytscout.collect.transcripts import collect_transcripts
 from ytscout.dashboard import serve as serve_mod
@@ -187,6 +188,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--transcripts",
         action="store_true",
         help="transcripts of own and approved/watch videos not yet fetched (no Data API units)",
+    )
+    collect.add_argument(
+        "--niches",
+        action="store_true",
+        help="weekly refresh of every tracked niche's channels (no searches), then re-score them",
     )
     collect.add_argument(
         "--limit",
@@ -525,14 +531,16 @@ def _print_summary(counts: Counts, ledger: Ledger) -> None:
 
 
 def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
-    """``collect --own`` or ``--competitors``: channels → uploads → videos → snapshots.
+    """``collect --own``, ``--competitors`` or ``--niches``: channels → uploads → videos →
+    snapshots (plus Analytics and transcripts).
 
     Exit 3 when a quota cap stops the run; everything collected before it is committed.
     """
-    if [args.own, args.competitors, args.analytics, args.transcripts].count(True) != 1:
+    sources = [args.own, args.competitors, args.analytics, args.transcripts, args.niches]
+    if sources.count(True) != 1:
         print(
-            "ytscout collect: choose one source: --own, --competitors, --analytics or "
-            "--transcripts",
+            "ytscout collect: choose one source: --own, --competitors, --analytics, "
+            "--transcripts or --niches",
             file=sys.stderr,
         )
         return EXIT_ERROR
@@ -575,6 +583,8 @@ def cmd_collect(args: argparse.Namespace, _extras: list[str]) -> int:
 
     if args.competitors:
         return _collect_competitors(args, channel_id, daily_cap, db_path, transport, shorts_max)
+    if args.niches:
+        return _collect_niches(args, root, daily_cap, db_path, transport, shorts_max)
 
     if args.dry_run:
         conn = _dry_run_connection(db_path)
@@ -972,6 +982,103 @@ def _collect_competitors(
         conn.close()
 
 
+def _tracked_niches(conn: sqlite3.Connection | None) -> list[dict]:
+    """Tracked niches with their channels; none when the DB is absent or predates them."""
+    if conn is None:
+        return []
+    try:
+        return tracked_niches(conn)
+    except sqlite3.Error as exc:
+        print(f"note: could not read tracked niches: {exc}", file=sys.stderr)
+        return []
+
+
+def _print_niche_units(result: NicheRefreshResult) -> None:
+    for r in result.reports:
+        shared = f", {r.shared} shared with an earlier niche" if r.shared else ""
+        state = "" if r.finished else "; stopped (quota)"
+        print(
+            f"  niche {r.niche_id} {r.label}: {r.channels} channel(s){shared};"
+            f" channels.list x {r.channel_batches}, playlistItems.list x {r.pages},"
+            f" videos.list x {r.video_batches} - {r.units} unit(s){state}"
+        )
+
+
+def _collect_niches(
+    args: argparse.Namespace,
+    root: Path,
+    daily_cap: int,
+    db_path: Path,
+    transport: Transport,
+    shorts_max: int,
+) -> int:
+    """``collect --niches``, then ``score`` for the niches it finished. Exit 3 on a quota
+    stop (finished niches committed and scored), 1 if the re-score cannot load its config."""
+    now = utc_now()
+    if args.dry_run:
+        with _read_only(db_path) as real:
+            niches = _tracked_niches(real)
+        conn = _dry_run_connection(db_path)
+        try:
+            ledger = Ledger(conn, daily_cap, run_cap=args.max_units, dry_run=True)
+            result = collect_niches(
+                DataApi(ledger, transport), conn, niches, shorts_max_seconds=shorts_max, now=now
+            )
+        finally:
+            conn.close()
+        print("dry run: planned YouTube Data API calls (nothing is sent, nothing is written)")
+        _print_niche_units(result)
+        units = transport.units if isinstance(transport, DryRunTransport) else ledger.run_used
+        print(f"planned: {units} units for {len(result.reports)} tracked niche(s); no search.list")
+        print(
+            "one uploads page per channel; videos.list pools the page's new and "
+            f"<= {RECENT_DAYS}-day-old videos 50 ids per call (the plan assumes one call's "
+            "worth per niche); then `score` re-scores each refreshed niche"
+        )
+        if result.stopped is not None:
+            print(f"a real run would stop here: {result.stopped}", file=sys.stderr)
+            return EXIT_QUOTA_EXHAUSTED
+        return EXIT_OK
+
+    conn = connect(db_path)
+    try:
+        ledger = Ledger(conn, daily_cap, run_cap=args.max_units)
+        with recorded_run(conn, "collect_niches") as run:
+            result = collect_niches(
+                DataApi(ledger, transport),
+                conn,
+                tracked_niches(conn),
+                shorts_max_seconds=shorts_max,
+                now=now,
+            )
+            if result.stopped is not None:
+                run.status = "quota_exhausted"
+        _print_niche_units(result)
+        c = result.counts
+        print(
+            f"collect --niches: {len(result.finished)} of {len(result.reports)} niche(s)"
+            f" refreshed; channels {c.channels}, videos {c.videos}, snapshots {c.snapshots};"
+            f" units this run {ledger.run_used}, units today {ledger.used_today()}"
+        )
+        code = EXIT_OK
+        if result.finished:
+            try:
+                niche_cfg = niche_scoring_config(load_scoring(root / SCORING_RELPATH))
+            except ScoringConfigError as exc:
+                print(f"collect: {exc}", file=sys.stderr)
+                return EXIT_ERROR
+            code = _score_niches(conn, root, niche_cfg, niche_ids=result.finished)
+        if result.stopped is not None:
+            print(
+                f"stopped early; finished niches are committed and scored: {result.stopped}",
+                file=sys.stderr,
+            )
+            return EXIT_QUOTA_EXHAUSTED
+        return code
+    finally:
+        conn.close()
+
+
 def cmd_score(args: argparse.Namespace, _extras: list[str]) -> int:
     """``score [--competitors | --niches | --all]``: append channel_metrics and/or
     niche_scores rows. No API calls. ``--all`` (the default) runs both."""
@@ -1011,8 +1118,11 @@ def cmd_score(args: argparse.Namespace, _extras: list[str]) -> int:
     return EXIT_OK
 
 
-def _score_niches(conn: sqlite3.Connection, root: Path, cfg: dict) -> int:
-    """``score --niches``: one niche_scores row per tagged niche, then the ranked table."""
+def _score_niches(
+    conn: sqlite3.Connection, root: Path, cfg: dict, niche_ids: list[int] | None = None
+) -> int:
+    """``score --niches``: one niche_scores row per tagged niche (only ``niche_ids`` when
+    given), then the ranked table."""
     try:
         settings: Settings | None = load(repo_root=root)
     except SettingsMissing:
@@ -1036,6 +1146,7 @@ def _score_niches(conn: sqlite3.Connection, root: Path, cfg: dict) -> int:
             coverage=coverage,
             usd_gbp=settings.usd_gbp if settings else DEFAULT_USD_GBP,
             now=utc_now(),
+            niche_ids=niche_ids,
         )
     skipped = (
         f"; {result.skipped_untagged} untagged niche(s) skipped (run `scout tag`)"

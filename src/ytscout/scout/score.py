@@ -13,7 +13,7 @@ import json
 import math
 import sqlite3
 import statistics
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -214,9 +214,11 @@ def score_niches(
     coverage: PipelineCoverage,
     usd_gbp: float,
     now: datetime,
+    niche_ids: Collection[int] | None = None,
 ) -> NicheScoreResult:
-    """Score every tagged validated/scored/tracked niche; append one row each, in one
-    transaction; ``validated`` becomes ``scored``. Untagged niches are skipped and counted."""
+    """Score every tagged validated/scored/tracked niche (only ``niche_ids`` when given);
+    append one row each, in one transaction; ``validated`` becomes ``scored``. Untagged
+    niches are skipped and counted."""
     steps = list(steps)
     result = NicheScoreResult(scored_at=to_utc_iso(now))
     calibration = calibration_from_db(
@@ -224,6 +226,8 @@ def score_niches(
     )
     with conn:
         for niche in repo.scorable_niches(conn):
+            if niche_ids is not None and niche["id"] not in niche_ids:
+                continue
             if niche["tag_prompt_hash"] is None:
                 result.skipped_untagged += 1
                 continue
