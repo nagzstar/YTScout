@@ -169,3 +169,73 @@ def metrics_config(config: dict[str, Any]) -> MetricsConfig:
         previous = top if top is not None else previous
         buckets.append(LengthBucket(label, top))
     return MetricsConfig(float(multiplier), window, tuple(buckets))
+
+
+# Keys of `niche_scoring:` (023) and how to validate them: (kind, minimum).
+_NICHE_SCORING_NUMBERS: dict[str, tuple[str, float]] = {
+    "small_subs_max": ("int", 1),
+    "small_age_days": ("int", 1),
+    "outlier_multiplier": ("number", 0),
+    "outlier_window_videos": ("int", 1),
+    "window_days": ("int", 1),
+    "top_n_concentration": ("int", 1),
+    "low_confidence_min_small": ("int", 0),
+    "low_confidence_cap": ("number", 0),
+    "manual_hours_floor_per_month": ("number", 0),
+}
+_NICHE_SCORING_PER_FORMAT: tuple[str, ...] = ("outlier_floor_views", "videos_per_month")
+_NICHE_SCORING_WEIGHTS: tuple[str, ...] = (
+    "small_outlier_rate",
+    "newcomer_view_share",
+    "inverse_concentration",
+)
+
+
+def _niche_number(where: str, value: Any, kind: str, minimum: float) -> float:
+    ok_type = isinstance(value, int) if kind == "int" else isinstance(value, int | float)
+    if isinstance(value, bool) or not ok_type or value < minimum:
+        noun = "an integer" if kind == "int" else "a number"
+        raise ScoringConfigError(
+            f"{where} must be {noun} ≥ {minimum:g} in scoring.yaml, got {value!r}"
+        )
+    return value
+
+
+def niche_scoring_config(config: dict[str, Any]) -> dict[str, Any]:
+    """The ``niche_scoring:`` section (023), validated, plus the top-level
+    ``shorts_max_seconds`` the format split needs. This is the ``cfg`` mapping every
+    function in ``scoring.opportunity`` takes."""
+    section = config.get("niche_scoring")
+    if not isinstance(section, dict):
+        raise ScoringConfigError("scoring.yaml has no `niche_scoring:` mapping")
+    cfg: dict[str, Any] = {"shorts_max_seconds": shorts_max_seconds(config)}
+    for key, (kind, minimum) in _NICHE_SCORING_NUMBERS.items():
+        cfg[key] = _niche_number(f"niche_scoring.{key}", section.get(key), kind, minimum)
+    if cfg["outlier_multiplier"] <= 0 or cfg["manual_hours_floor_per_month"] <= 0:
+        raise ScoringConfigError(
+            "niche_scoring.outlier_multiplier and manual_hours_floor_per_month must be > 0"
+        )
+    if cfg["low_confidence_cap"] > 1:
+        raise ScoringConfigError("niche_scoring.low_confidence_cap must be ≤ 1")
+    for key in _NICHE_SCORING_PER_FORMAT:
+        raw = section.get(key)
+        if not isinstance(raw, dict) or set(raw) != {"shorts", "longform"}:
+            raise ScoringConfigError(f"niche_scoring.{key} must map shorts and longform to numbers")
+        cfg[key] = {
+            fmt: _niche_number(f"niche_scoring.{key}.{fmt}", raw[fmt], "number", 0)
+            for fmt in ("shorts", "longform")
+        }
+    raw_weights = section.get("weights")
+    if not isinstance(raw_weights, dict) or set(raw_weights) != set(_NICHE_SCORING_WEIGHTS):
+        raise ScoringConfigError(
+            "niche_scoring.weights must map exactly "
+            + ", ".join(_NICHE_SCORING_WEIGHTS)
+            + " to numbers"
+        )
+    cfg["weights"] = {
+        k: _niche_number(f"niche_scoring.weights.{k}", raw_weights[k], "number", 0)
+        for k in _NICHE_SCORING_WEIGHTS
+    }
+    if abs(sum(cfg["weights"].values()) - 1.0) > 1e-6:
+        raise ScoringConfigError("niche_scoring.weights must sum to 1")
+    return cfg

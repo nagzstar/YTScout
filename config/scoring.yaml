@@ -105,3 +105,45 @@ niche_validation:
   videos_per_channel: 30
   # search.list relevanceLanguage (free): the scout looks for English-language niches.
   language: en
+
+# Niche scoring (023, DESIGN.md §6). The pure functions in src/ytscout/scoring/
+# {opportunity,money,effort,final}.py read every number from this section and nothing
+# else. small_subs_max / small_age_days repeat niche_validation and outlier_multiplier /
+# outlier_window_videos repeat competitor_metrics on purpose: each section is read by a
+# different command, and tests/test_scoring.py fails if the pairs drift apart.
+niche_scoring:
+  # A channel is "small" (a newcomer) when subs < small_subs_max AND it was created fewer
+  # than small_age_days before the scoring date. Hidden subs or no creation date means
+  # "unknown": counted in the niche totals, never in the small set.
+  small_subs_max: 10000
+  small_age_days: 365
+  # A video is an outlier when views >= outlier_multiplier x the median views of the
+  # channel's newest outlier_window_videos videos in the same format ...
+  outlier_multiplier: 3
+  outlier_window_videos: 30
+  # ... AND views >= this floor for the format. Keeps a 3-view video with a 1-view median
+  # from counting as a hit.
+  outlier_floor_views:
+    shorts: 10000
+    longform: 2000
+  # The "last 90 days": views and outliers count only for videos published within it.
+  window_days: 90
+  # opportunity = sum of weight x component. small_outlier_rate and newcomer_view_share
+  # are taken as-is; inverse_concentration weights (1 - concentration).
+  weights:
+    small_outlier_rate: 0.5
+    newcomer_view_share: 0.3
+    inverse_concentration: 0.2
+  # concentration = share of window views held by the top_n_concentration channels.
+  top_n_concentration: 3
+  # Fewer small channels than this flags the niche low_confidence and caps opportunity.
+  low_confidence_min_small: 5
+  low_confidence_cap: 0.4
+  # Videos a month the pipeline would publish in each format (DESIGN.md 6.4); a niche
+  # may override it. Multiplies manual hours per video into hours per month.
+  videos_per_month:
+    shorts: 20
+    longform: 4
+  # score = est GBP/month / max(manual hours/month, this floor). Stops a fully automated
+  # niche scoring infinity.
+  manual_hours_floor_per_month: 2
