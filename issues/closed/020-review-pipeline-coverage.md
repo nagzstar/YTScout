@@ -37,3 +37,16 @@ they should match what a week of making videos actually feels like.
 ## Notes
 
 `once.ps1 020` gives you Claude to talk it through with, but the judgement here is yours.
+
+## Outcome (closed 2026-09-26)
+
+Nagz reviewed `docs/pipeline-audit.md`, `config/pipeline_coverage.yaml` and
+`config/production_steps.yaml` and accepted every coverage call and default as written.
+No config changes.
+
+`ytscout audit` exits 0. Totals: **1.20 h per Short, 1.25 h per long-form video**
+(24 h/month and 5 h/month at the settings defaults).
+
+What Claude got wrong in 019: nothing Nagz disagreed with. The three flagged guesses
+(visuals 0.5 h, single-value QA across formats, research 0.2 h) stand as the working
+figures; a per-format QA override remains a job for issue 023 if long-form output grows.
