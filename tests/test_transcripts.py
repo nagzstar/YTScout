@@ -8,6 +8,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import youtube_transcript_api
+from requests.exceptions import SSLError
 from youtube_transcript_api import IpBlocked, NoTranscriptFound, RequestBlocked, TranscriptsDisabled
 
 from ytscout import transcripts
@@ -15,6 +17,7 @@ from ytscout.cli import EXIT_OK, main
 from ytscout.collect.transcripts import BLOCK_STREAK_LIMIT, collect_transcripts
 from ytscout.store import connect, repo
 from ytscout.store.db import to_utc_iso
+from ytscout.youtube import tls
 
 OWN = "UCown"
 
@@ -58,6 +61,12 @@ def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     recorded: list[float] = []
     monkeypatch.setattr(transcripts, "_sleep", recorded.append)
     return recorded
+
+
+@pytest.fixture(autouse=True)
+def _no_ca_certs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``configure`` is module state; keep one test's bundle out of the next."""
+    monkeypatch.setattr(transcripts, "_ca_certs", None)
 
 
 def use(monkeypatch: pytest.MonkeyPatch, answers: dict[str, object]) -> FakeFetcher:
@@ -320,6 +329,61 @@ def test_circuit_breaker_streak_resets_on_any_other_result(
     assert sleeps == [0.5]  # only the pause after a1's ok
 
 
+def test_breaker_stops_after_consecutive_ssl_errors(
+    monkeypatch: pytest.MonkeyPatch, sleeps: list[float]
+) -> None:
+    conn = seeded()  # candidates o1, a1, o2, w1
+    monkeypatch.setattr("ytscout.collect.transcripts.BLOCK_STREAK_LIMIT", 2)
+    fake = use(monkeypatch, {vid: SSLError("CERTIFICATE_VERIFY_FAILED") for vid in ("o1", "a1")})
+    counts = collect_transcripts(conn, pause_seconds=0.5)
+    assert fake.calls == ["o1"] * 4 + ["a1"] * 4  # each still gets its retries
+    assert (counts.stopped_after, counts.stopped_on, counts.untouched) == (2, "SSLError", 2)
+    assert counts.error == 2
+    assert repo.get_transcripts(conn, "o2") == [] and repo.get_transcripts(conn, "w1") == []
+
+
+def test_breaker_ignores_mixed_errors(monkeypatch: pytest.MonkeyPatch, sleeps: list[float]) -> None:
+    conn = seeded()
+    monkeypatch.setattr("ytscout.collect.transcripts.BLOCK_STREAK_LIMIT", 2)
+    use(
+        monkeypatch,
+        {
+            "o1": SSLError("x"),
+            "a1": [FakeTrack("en", True)],
+            "o2": SSLError("x"),
+            "w1": RuntimeError("not systemic"),
+        },
+    )
+    counts = collect_transcripts(conn, pause_seconds=0.5)
+    assert counts.stopped_after is None
+    assert (counts.ok, counts.error) == (1, 3)
+
+
+class FakeApi:
+    """Stands in for ``YouTubeTranscriptApi``; records the session it was given."""
+
+    instances: list[FakeApi] = []
+
+    def __init__(self, proxy_config: object = None, http_client: object = None) -> None:
+        self.http_client = http_client
+        FakeApi.instances.append(self)
+
+    def list(self, video_id: str) -> list[FakeTrack]:
+        return [FakeTrack("en", False)]
+
+
+def test_library_session_verifies_against_configured_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    FakeApi.instances = []
+    monkeypatch.setattr(youtube_transcript_api, "YouTubeTranscriptApi", FakeApi)
+    bundle = tmp_path / "ca-bundle.pem"
+    transcripts.configure(bundle)
+    assert transcripts._library_fetcher("v1")[0].language_code == "en"
+    session = FakeApi.instances[-1].http_client
+    assert session is not None and session.verify == str(bundle)
+
+
 def test_ok_row_is_never_overwritten() -> None:
     conn = seeded()
     with conn:
@@ -404,6 +468,50 @@ def test_cli_stops_after_five_blocks_without_sleeping(
     conn = connect(repo_root / "data" / "ytscout.sqlite")
     assert conn.execute("SELECT COUNT(*) FROM transcripts").fetchone()[0] == 5
     conn.close()
+
+
+def test_cli_stops_after_five_ssl_errors(
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sleeps: list[float],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    conn = connect(repo_root / "data" / "ytscout.sqlite")
+    ids = [f"v{i:03d}" for i in range(8)]
+    with conn:
+        repo.upsert_channel(conn, OWN, role="own")
+        for i, vid in enumerate(ids):
+            repo.upsert_video(conn, vid, channel_id=OWN, published_at=f"2026-01-0{i + 1}T00:00:00Z")
+    conn.close()
+    use(monkeypatch, {vid: SSLError("CERTIFICATE_VERIFY_FAILED") for vid in ids})
+    assert main(["collect", "--transcripts"]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "error 5" in out
+    assert "stopped after 5 consecutive SSLError; 3 candidates untouched" in out
+    conn = connect(repo_root / "data" / "ytscout.sqlite")
+    assert conn.execute("SELECT COUNT(*) FROM transcripts").fetchone()[0] == 5
+    conn.close()
+
+
+def test_cli_hands_the_tls_bundle_to_the_library(
+    repo_root: Path, monkeypatch: pytest.MonkeyPatch, sleeps: list[float]
+) -> None:
+    for name in tls.ENV_ORDER:
+        monkeypatch.delenv(name, raising=False)
+    _seed_db(repo_root)
+    FakeApi.instances = []
+    monkeypatch.setattr(youtube_transcript_api, "YouTubeTranscriptApi", FakeApi)
+    assert main(["collect", "--transcripts"]) == EXIT_OK
+    expected = tls.ca_bundle(repo_root / "data").path
+    assert expected.is_file()
+    assert len(FakeApi.instances) == 2  # o1 and o2
+    assert {api.http_client.verify for api in FakeApi.instances} == {str(expected)}
+
+
+def test_cli_dry_run_writes_no_ca_bundle(repo_root: Path) -> None:
+    _seed_db(repo_root)
+    assert main(["collect", "--transcripts", "--dry-run"]) == EXIT_OK
+    assert not (repo_root / "data" / tls.BUNDLE_FILENAME).exists()
 
 
 def test_cli_real_run_prints_counts_and_uses_configured_pause(

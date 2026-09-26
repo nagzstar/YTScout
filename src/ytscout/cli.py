@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from ytscout import __version__, claude_runner, dashboard, packets
+from ytscout import __version__, claude_runner, dashboard, packets, transcripts
 from ytscout import doctor as doctor_mod
 from ytscout.analyse import DEFAULT_LIMIT as DEFAULT_SUMMARY_LIMIT
 from ytscout.analyse import (
@@ -910,6 +910,8 @@ def _collect_transcripts(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     assert settings is not None
+    # The library's own requests session must trust the same bundle as the Google clients.
+    transcripts.configure(tls.ca_bundle(settings.data_dir).path)
     conn = connect(db_path)
     try:
         with recorded_run(conn, "collect_transcripts"):
@@ -923,7 +925,7 @@ def _collect_transcripts(args: argparse.Namespace) -> int:
         if counts.stopped_after is not None:
             print(
                 f"collect --transcripts: stopped after {counts.stopped_after} consecutive "
-                f"IpBlocked; {counts.untouched} candidates untouched"
+                f"{counts.stopped_on or '?'}; {counts.untouched} candidates untouched"
             )
         for video_id, status, detail in counts.failures:
             print(f"  {video_id}: {status} ({detail})", file=sys.stderr)

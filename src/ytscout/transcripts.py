@@ -15,6 +15,11 @@ it can be swapped or removed without touching anything else. Tests replace ``_fe
   for a week (039);
 * ``error`` — network, rate limit or anything unexpected, after 3 retries with backoff
   (1 s, 4 s, 16 s). The next weekly run tries again.
+
+TLS (041): the library builds its own ``requests.Session`` that trusts certifi alone, which
+fails behind Avast's HTTPS interception. ``configure(ca_certs)`` makes every later fetch use
+a session whose ``verify`` is that bundle (``youtube.tls.ca_bundle``). Verification is never
+turned off.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import re
 import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 STATUSES = ("ok", "unavailable", "blocked", "error")
@@ -61,6 +67,27 @@ class Unavailable(Exception):
     """Final: this video has no transcript we can use. Never retried."""
 
 
+_ca_certs: Path | None = None
+
+
+def configure(ca_certs: Path | None) -> None:
+    """Verify every later library request against ``ca_certs``; None means the library's default."""
+    global _ca_certs
+    _ca_certs = ca_certs
+
+
+def _api() -> object:
+    """A ``YouTubeTranscriptApi`` whose session trusts the configured CA bundle."""
+    import requests
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    if _ca_certs is None:
+        return YouTubeTranscriptApi()
+    session = requests.Session()
+    session.verify = str(_ca_certs)
+    return YouTubeTranscriptApi(http_client=session)
+
+
 def _library_fetcher(video_id: str) -> Iterable[Track]:
     """The real boundary: list a video's caption tracks, mapping final errors to ``Unavailable``."""
     from youtube_transcript_api import (
@@ -68,11 +95,11 @@ def _library_fetcher(video_id: str) -> Iterable[Track]:
         NoTranscriptFound,
         TranscriptsDisabled,
         VideoUnavailable,
-        YouTubeTranscriptApi,
     )
 
+    api = _api()
     try:
-        return list(YouTubeTranscriptApi().list(video_id))
+        return list(api.list(video_id))  # type: ignore[attr-defined]
     except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable, InvalidVideoId) as exc:
         raise Unavailable(type(exc).__name__) from exc
 
