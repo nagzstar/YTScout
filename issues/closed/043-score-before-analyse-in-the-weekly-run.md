@@ -38,3 +38,20 @@ channel, so views_per_sub, upload rate and title features could not be used."
 
 `src/ytscout/packets.py` `competitor_packet` (metrics per channel come from
 `repo.latest_channel_metrics`). `issues/closed/013-*.md` for the original step order.
+
+## Outcome (closed 2026-09-26)
+
+**Delivered**: `score --competitors` now runs immediately after `collect --niches` and before `analyse --summaries`, so the competitor comparison packet has current channel metrics from the same week's collection.
+
+**Changes**:
+- `scripts/run_weekly.ps1`: Inserted `score --competitors` step (line 63) in the `$Steps` array between collectors and analyses
+- `scripts/run_weekly.ps1`: Updated `.DESCRIPTION` to document the step order and explain that `score --competitors` is cheap and can run twice a week (issue 043)
+- `tests/test_scripts.py`: Updated `EXPECTED_STEPS` list to include `"score --competitors"` in the correct position
+
+**Verification**:
+- `powershell -File scripts\run_weekly.ps1 -DryRun` produces 10 steps with `score --competitors` between `collect --niches` and `analyse --summaries` ✓
+- `pytest -q` passes all 547 tests ✓
+- `ruff format` and `ruff check` pass ✓
+- `python -m ytscout --help` runs successfully ✓
+
+**Notes for next issue**: The step order is now correct. The competitor packet for `analyse --competitors` will have current metrics from the same week, not from the previous week. This fixes the caveat seen in analysis ID 2.

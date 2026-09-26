@@ -8,6 +8,11 @@
     which is fine as long as nothing else spent it. Do not move the time without
     re-reading DESIGN.md section 8 (quota budget).
 
+    Step order: collect --own, --competitors, --analytics, --transcripts, --niches;
+    then score --competitors; then analyse --summaries, --competitors; then score --all;
+    finally dashboard. score --competitors is cheap (no API calls, no Claude calls) and
+    deterministic, so running it twice a week is fine (issue 043).
+
     Exit codes from each step:
       0  ok
       2  not implemented yet -> logged, continue
@@ -60,6 +65,7 @@ $Steps = @(
     @{ Args = @('collect', '--analytics', '--max-units', $MaxUnits); Collector = $true },
     @{ Args = @('collect', '--transcripts', '--max-units', $MaxUnits); Collector = $true },
     @{ Args = @('collect', '--niches', '--max-units', $MaxUnits); Collector = $true },
+    @{ Args = @('score', '--competitors'); Collector = $false },
     @{ Args = @('analyse', '--summaries'); Collector = $false },
     @{ Args = @('analyse', '--competitors'); Collector = $false },
     @{ Args = @('score', '--all'); Collector = $false },

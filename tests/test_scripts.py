@@ -21,6 +21,7 @@ EXPECTED_STEPS = [
     "collect --analytics",
     "collect --transcripts",
     "collect --niches",
+    "score --competitors",
     "analyse --summaries",
     "analyse --competitors",
     "score",
