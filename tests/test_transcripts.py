@@ -514,6 +514,32 @@ def test_cli_dry_run_writes_no_ca_bundle(repo_root: Path) -> None:
     assert not (repo_root / "data" / tls.BUNDLE_FILENAME).exists()
 
 
+def test_callback_called_once_per_video_in_order(
+    monkeypatch: pytest.MonkeyPatch, sleeps: list[float]
+) -> None:
+    conn = seeded()
+    results: list[tuple[str, str, str | None]] = []
+
+    def record_result(video_id: str, status: str, detail: str | None) -> None:
+        results.append((video_id, status, detail))
+
+    use(
+        monkeypatch,
+        {
+            "o1": [FakeTrack("en", True, ["one"])],
+            "a1": TranscriptsDisabled("a1"),
+            "o2": [FakeTrack("en-GB", False, ["two"])],
+            "w1": [FakeTrack("de", False, ["drei"])],
+        },
+    )
+    collect_transcripts(conn, pause_seconds=1.5, on_result=record_result)
+    assert len(results) == 4
+    assert results[0] == ("o1", "ok", None)
+    assert results[1] == ("a1", "unavailable", "TranscriptsDisabled")
+    assert results[2] == ("o2", "ok", None)
+    assert results[3] == ("w1", "ok", None)
+
+
 def test_cli_real_run_prints_counts_and_uses_configured_pause(
     repo_root: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -525,5 +551,6 @@ def test_cli_real_run_prints_counts_and_uses_configured_pause(
     assert main(["collect", "--transcripts"]) == EXIT_OK
     captured = capsys.readouterr()
     assert "ok 1, unavailable 1, error 0" in captured.out
+    assert "o1: ok (?)" in captured.err
     assert "o2: unavailable (NoTranscriptFound)" in captured.err
     assert sleeps == [0.25]

@@ -17,6 +17,7 @@ a broken network costs ``BLOCK_STREAK_LIMIT`` videos of backoff, not the whole r
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ytscout import transcripts
@@ -56,9 +57,13 @@ def collect_transcripts(
     *,
     limit: int = DEFAULT_LIMIT,
     pause_seconds: float = transcripts.DEFAULT_PAUSE_SECONDS,
+    on_result: Callable[[str, str, str | None], None] | None = None,
 ) -> TranscriptCounts:
     """Fetch up to ``limit`` candidates, pausing ``pause_seconds`` between videos, until
-    ``BLOCK_STREAK_LIMIT`` blocks or systemic errors in a row."""
+    ``BLOCK_STREAK_LIMIT`` blocks or systemic errors in a row.
+
+    If ``on_result`` is provided, it is called with (video_id, status, detail) after each
+    row is committed."""
     counts = TranscriptCounts()
     candidates = repo.transcript_candidates(conn, limit)
     streak = 0
@@ -86,4 +91,6 @@ def collect_transcripts(
         last_detail = result.detail
         if result.status != "ok":
             counts.failures.append((video_id, result.status, result.detail or "?"))
+        if on_result is not None:
+            on_result(video_id, result.status, result.detail)
     return counts

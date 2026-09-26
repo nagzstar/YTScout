@@ -914,9 +914,16 @@ def _collect_transcripts(args: argparse.Namespace) -> int:
     transcripts.configure(tls.ca_bundle(settings.data_dir).path)
     conn = connect(db_path)
     try:
+
+        def print_result(video_id: str, status: str, detail: str | None) -> None:
+            print(f"  {video_id}: {status} ({detail or '?'})", file=sys.stderr)
+
         with recorded_run(conn, "collect_transcripts"):
             counts = collect_transcripts(
-                conn, limit=args.limit, pause_seconds=settings.transcripts.pause_seconds
+                conn,
+                limit=args.limit,
+                pause_seconds=settings.transcripts.pause_seconds,
+                on_result=print_result,
             )
         print(
             f"collect --transcripts: ok {counts.ok}, unavailable {counts.unavailable}, "
@@ -927,8 +934,6 @@ def _collect_transcripts(args: argparse.Namespace) -> int:
                 f"collect --transcripts: stopped after {counts.stopped_after} consecutive "
                 f"{counts.stopped_on or '?'}; {counts.untouched} candidates untouched"
             )
-        for video_id, status, detail in counts.failures:
-            print(f"  {video_id}: {status} ({detail})", file=sys.stderr)
         return EXIT_OK
     finally:
         conn.close()
