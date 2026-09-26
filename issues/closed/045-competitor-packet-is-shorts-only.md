@@ -50,3 +50,37 @@ smuggled into `caveats` because the schema has nowhere else to put it.
 `DESIGN.md §6` (formats scored separately), `issues/closed/017-*.md` Outcome for the
 packet shape. Issue 044 changes candidate *order*; this one changes *membership*. Do 044
 first if both are open, the rebase is smaller that way.
+
+## Outcome (closed 2026-09-26)
+
+Delivered:
+
+- `repo.summarised_videos_for_channel(conn, channel_id, limit, fmt)` now requires a format
+  (`shorts` → `is_short = 1`, `long` → `is_short = 0`). Videos with unknown format
+  (`is_short` NULL) are in neither, so they never reach a Shorts packet.
+- `competitor_packet` passes `COMPETITOR_FORMAT`, adds a top-level `"format": "shorts"`
+  (next to the existing `meta.metrics_format`) and an `is_short` field on every video. A
+  channel with no summarised Shorts stays in the packet with `videos: []` and
+  `views_median: null`.
+- `repo.summary_plan` (and so `summary_candidates`): per channel, Shorts (outliers biggest
+  first, then newest) come before long-form/unknown; across channels the whole Shorts plan
+  (own first, then competitors round-robin, as 044) runs before any long-form. With
+  `per_channel` the long-form tail is cut first. `SummaryCandidate` gained `is_short`
+  (defaulted, so no other caller changed).
+- `prompts/competitor_analysis.md` says up front that every video is a Short under 3
+  minutes, drops the "mention long-form in caveats" escape hatch, and tells Claude an empty
+  `videos` list means no summarised Shorts yet (note it in caveats, do not infer from
+  metrics). The prompt hash changed to `3714ec9df93c`.
+- `analyse --competitors --dry-run` prints `format: shorts` and `N summarised shorts` per
+  channel.
+
+Checked: tests `test_packet_holds_only_shorts` and
+`test_summary_candidates_put_shorts_before_long_form` in `tests/test_competitor_analysis.py`;
+`pytest -q` 554 passed; ruff format/check clean; `ytscout --help`; the dry run against the
+real DB shows Curious Bone at 0 summarised Shorts (its summaries were all long-form
+essays) and seven other channels with 2–15. No real `claude -p` calls.
+
+For the next issue: Curious Bone's Shorts will be summarised on the next
+`analyse --summaries` run, since Shorts now come first. A long-form packet only needs a
+second `format` value passed to `summarised_videos_for_channel` and a matching metrics
+filter.
