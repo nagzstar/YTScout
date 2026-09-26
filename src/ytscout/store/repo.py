@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import statistics
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -628,30 +630,127 @@ def record_decision(
 # --- video summaries (016) -----------------------------------------------------------------
 
 
-def summary_candidates(conn: sqlite3.Connection, prompt_hash: str, limit: int) -> list[str]:
-    """Video ids of the own and ``approved``/``watch`` channels that have had a transcript
-    attempt (any status) and no summary under ``prompt_hash``, newest first.
+@dataclass(frozen=True)
+class SummaryCandidate:
+    """One video ``summary_plan`` picked, with why: ``outlier`` or newest-first filler."""
 
-    A summary made without a transcript (the packet carried ``unavailable``/``error``) is
-    redone once an ``ok`` transcript exists, so titles-only summaries are a stopgap.
+    video_id: str
+    channel_id: str
+    channel_title: str | None
+    role: str
+    views: int | None
+    outlier: bool
+
+
+def summary_plan(
+    conn: sqlite3.Connection,
+    prompt_hash: str,
+    limit: int,
+    *,
+    per_channel: int | None = None,
+    outlier_multiplier: float = 3.0,
+    outlier_window: int = 30,
+) -> list[SummaryCandidate]:
+    """The videos ``analyse --summaries`` would summarise, in the order it would do them.
+
+    Eligible: videos of the own and ``approved``/``watch`` channels that have had a
+    transcript attempt (any status) and no summary under ``prompt_hash``. A summary made
+    without a transcript (the packet carried ``unavailable``/``error``) is redone once an
+    ``ok`` transcript exists, so titles-only summaries are a stopgap.
+
+    Order (044): each channel's queue is its outliers (latest views >= ``outlier_multiplier``
+    x the median of the channel's newest ``outlier_window`` videos of the same format),
+    biggest first, then its other videos newest first, cut at ``per_channel``. Own channels'
+    queues come first; the competitors' are then interleaved round-robin (by channel id) so
+    a daily poster cannot crowd out the rest. The whole list is cut at ``limit``.
     """
     rows = conn.execute(
         """
-        SELECT v.id FROM videos v JOIN channels c ON c.id = v.channel_id
-        WHERE (c.role = 'own' OR c.status IN ('approved', 'watch'))
-          AND EXISTS (SELECT 1 FROM transcripts t WHERE t.video_id = v.id)
-          AND NOT EXISTS (
-                SELECT 1 FROM video_summaries s
-                WHERE s.video_id = v.id AND s.prompt_hash = ?
-                  AND (s.transcript_status = 'ok'
-                       OR NOT EXISTS (SELECT 1 FROM transcripts t2
-                                      WHERE t2.video_id = v.id AND t2.status = 'ok')))
+        SELECT v.id, v.channel_id, c.role, c.title, v.is_short,
+               (SELECT views FROM video_snapshots x WHERE x.video_id = v.id
+                 ORDER BY x.captured_at DESC, x.id DESC LIMIT 1) AS views,
+               (EXISTS (SELECT 1 FROM transcripts t WHERE t.video_id = v.id)
+                AND NOT EXISTS (
+                    SELECT 1 FROM video_summaries s
+                    WHERE s.video_id = v.id AND s.prompt_hash = ?
+                      AND (s.transcript_status = 'ok'
+                           OR NOT EXISTS (SELECT 1 FROM transcripts t2
+                                          WHERE t2.video_id = v.id AND t2.status = 'ok'))))
+                   AS eligible
+        FROM videos v JOIN channels c ON c.id = v.channel_id
+        WHERE c.role = 'own' OR c.status IN ('approved', 'watch')
         ORDER BY v.published_at DESC, v.id
-        LIMIT ?
         """,
-        (prompt_hash, limit),
+        (prompt_hash,),
     ).fetchall()
-    return [row[0] for row in rows]
+
+    # Median views of each channel x format's newest `outlier_window` videos (all of them,
+    # summarised or not), as in competitor_metrics. Unknown format is its own group.
+    window: dict[tuple[str, Any], list[int]] = {}
+    for row in rows:
+        group = window.setdefault((row["channel_id"], row["is_short"]), [])
+        if row["views"] is not None and len(group) < outlier_window:
+            group.append(row["views"])
+    medians = {key: statistics.median(vals) for key, vals in window.items() if vals}
+
+    outliers: dict[str, list[SummaryCandidate]] = {}
+    newest: dict[str, list[SummaryCandidate]] = {}
+    roles: dict[str, str] = {}
+    for row in rows:
+        if not row["eligible"]:
+            continue
+        median = medians.get((row["channel_id"], row["is_short"]))
+        views = row["views"]
+        is_outlier = (
+            views is not None
+            and median is not None
+            and views > 0
+            and views >= outlier_multiplier * median
+        )
+        cand = SummaryCandidate(
+            row["id"], row["channel_id"], row["title"], row["role"], views, is_outlier
+        )
+        roles[row["channel_id"]] = row["role"]
+        (outliers if is_outlier else newest).setdefault(row["channel_id"], []).append(cand)
+
+    queues: dict[str, list[SummaryCandidate]] = {}
+    for channel_id in sorted(roles):
+        # sorted() is stable, so equal views keep newest-first order.
+        queue = sorted(outliers.get(channel_id, []), key=lambda c: -(c.views or 0))
+        queue += newest.get(channel_id, [])
+        queues[channel_id] = queue if per_channel is None else queue[:per_channel]
+
+    plan: list[SummaryCandidate] = []
+    for channel_id, queue in queues.items():
+        if roles[channel_id] == "own":
+            plan.extend(queue)
+    others = [q for cid, q in queues.items() if roles[cid] != "own"]
+    for i in range(max((len(q) for q in others), default=0)):
+        plan.extend(q[i] for q in others if i < len(q))
+    return plan[:limit]
+
+
+def summary_candidates(
+    conn: sqlite3.Connection,
+    prompt_hash: str,
+    limit: int,
+    *,
+    per_channel: int | None = None,
+    outlier_multiplier: float = 3.0,
+    outlier_window: int = 30,
+) -> list[str]:
+    """The video ids of ``summary_plan``, in order."""
+    return [
+        c.video_id
+        for c in summary_plan(
+            conn,
+            prompt_hash,
+            limit,
+            per_channel=per_channel,
+            outlier_multiplier=outlier_multiplier,
+            outlier_window=outlier_window,
+        )
+    ]
 
 
 def put_video_summary(
@@ -699,7 +798,8 @@ def get_video_summary(
 def summarised_videos_for_channel(
     conn: sqlite3.Connection, channel_id: str, limit: int
 ) -> list[sqlite3.Row]:
-    """The channel's newest videos that have a summary, with the latest summary and views.
+    """The channel's most-viewed videos that have a summary (views desc, then newest), with
+    the latest summary and views, so the comparison sees the channel's best work (044).
 
     One row per video: the summary row with the newest ``created_at`` (whatever its
     prompt hash) and the latest snapshot's views.
@@ -714,7 +814,7 @@ def summarised_videos_for_channel(
             SELECT rowid FROM video_summaries y WHERE y.video_id = v.id
              ORDER BY y.created_at DESC, y.rowid DESC LIMIT 1)
         WHERE v.channel_id = ?
-        ORDER BY v.published_at DESC, v.id
+        ORDER BY views IS NULL, views DESC, v.published_at DESC, v.id
         LIMIT ?
         """,
         (channel_id, limit),

@@ -81,6 +81,7 @@ from ytscout.scoring import (
     metrics_config,
     niche_scoring_config,
     shorts_max_seconds,
+    summaries_per_channel,
     validation_config,
 )
 from ytscout.scoring.metrics import FORMATS
@@ -344,6 +345,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         default=DEFAULT_SUMMARY_LIMIT,
         help=f"--summaries: videos to summarise this run (default {DEFAULT_SUMMARY_LIMIT})",
+    )
+    analyse.add_argument(
+        "--per-channel",
+        type=_positive_int,
+        default=None,
+        metavar="N",
+        help="--summaries: at most N videos per channel this run "
+        "(default video_summaries.per_channel in config/scoring.yaml)",
     )
     analyse.add_argument(
         "--dry-run",
@@ -1642,15 +1651,53 @@ def cmd_packet(args: argparse.Namespace, _extras: list[str]) -> int:
     return EXIT_OK
 
 
+@dataclass(frozen=True)
+class _SummaryOptions:
+    limit: int
+    per_channel: int
+    outlier_multiplier: float
+    outlier_window: int
+
+    def kwargs(self) -> dict:
+        return {
+            "per_channel": self.per_channel,
+            "outlier_multiplier": self.outlier_multiplier,
+            "outlier_window": self.outlier_window,
+        }
+
+
+def _summary_options(args: argparse.Namespace, root: Path) -> _SummaryOptions:
+    """``--limit``/``--per-channel`` plus the outlier rule from scoring.yaml (044)."""
+    doc = load_scoring(root / SCORING_RELPATH)
+    metrics = metrics_config(doc)
+    per_channel = args.per_channel or summaries_per_channel(doc)
+    return _SummaryOptions(
+        args.limit, per_channel, metrics.outlier_multiplier, metrics.outlier_window_videos
+    )
+
+
 def _print_summary_plan(
-    conn: sqlite3.Connection, prompt_path: Path, schema_path: Path, limit: int
+    conn: sqlite3.Connection, prompt_path: Path, schema_path: Path, opts: _SummaryOptions
 ) -> None:
     prompt_hash = claude_runner.file_hash(prompt_path)
-    ids = repo.summary_candidates(conn, prompt_hash, limit)
+    plan = repo.summary_plan(conn, prompt_hash, opts.limit, **opts.kwargs())
     print("dry run: videos that would be summarised (claude is not called, nothing is written)")
-    for video_id in ids:
-        print(f"  {video_id}")
-    print(f"candidates: {len(ids)}" if ids else "candidates: none")
+    for c in plan:
+        why = "outlier" if c.outlier else "newest"
+        views = "?" if c.views is None else f"{c.views:,}"
+        print(f"  {c.video_id} {c.channel_title or c.channel_id}: {views} views ({why})")
+    print(f"candidates: {len(plan)}" if plan else "candidates: none")
+    split: dict[str, list[int]] = {}
+    for c in plan:
+        counts = split.setdefault(c.channel_title or c.channel_id, [0, 0])
+        counts[0] += 1
+        counts[1] += c.outlier
+    print(
+        f"per channel (limit {opts.limit}, at most {opts.per_channel} each, "
+        f"outlier >= {opts.outlier_multiplier:g}x median):"
+    )
+    for name, (n, n_out) in split.items():
+        print(f"  {name}: {n} ({n_out} outliers)")
     reason = claude_runner.check_available()
     print(f"claude: {'ok' if reason is None else reason}")
     print(f"prompt: {prompt_path.name} ({prompt_hash}); schema: {schema_path.name}")
@@ -1702,6 +1749,14 @@ def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
             print(f"analyse: missing {path}", file=sys.stderr)
             return EXIT_ERROR
 
+    summary_opts: _SummaryOptions | None = None
+    if args.summaries:
+        try:
+            summary_opts = _summary_options(args, root)
+        except ScoringConfigError as exc:
+            print(f"analyse: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+
     settings: Settings | None
     try:
         settings = load(repo_root=root)
@@ -1722,7 +1777,7 @@ def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
         copy = read_copy(db_path)
         try:
             if args.summaries:
-                _print_summary_plan(copy, *summary_paths(root), args.limit)
+                _print_summary_plan(copy, *summary_paths(root), summary_opts)
             if args.competitors:
                 _print_comparison_plan(copy, *competitor_paths(root))
         finally:
@@ -1755,7 +1810,8 @@ def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
     conn = connect(db_path)
     try:
         if args.summaries:
-            code = _run_summaries(args, conn, root, settings)
+            assert summary_opts is not None
+            code = _run_summaries(summary_opts, conn, root, settings)
             if code != EXIT_OK:
                 if args.competitors:
                     print(
@@ -1771,14 +1827,15 @@ def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
 
 
 def _run_summaries(
-    args: argparse.Namespace, conn: sqlite3.Connection, root: Path, settings: Settings
+    opts: _SummaryOptions, conn: sqlite3.Connection, root: Path, settings: Settings
 ) -> int:
     with recorded_run(conn, "analyse_summaries") as run:
         counts = summarise_videos(
             conn,
             repo_root=root,
             packets_dir=packets.packets_dir(settings.data_dir),
-            limit=args.limit,
+            limit=opts.limit,
+            **opts.kwargs(),
             model=settings.claude.model,
             progress=print,
         )

@@ -171,6 +171,17 @@ def metrics_config(config: dict[str, Any]) -> MetricsConfig:
     return MetricsConfig(float(multiplier), window, tuple(buckets))
 
 
+def summaries_per_channel(config: dict[str, Any]) -> int:
+    """``video_summaries.per_channel``: the most candidates one channel gets per run (044)."""
+    section = config.get("video_summaries")
+    value = section.get("per_channel") if isinstance(section, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ScoringConfigError(
+            f"video_summaries.per_channel must be a positive integer in scoring.yaml, got {value!r}"
+        )
+    return value
+
+
 # Keys of `niche_scoring:` (023) and how to validate them: (kind, minimum).
 _NICHE_SCORING_NUMBERS: dict[str, tuple[str, float]] = {
     "small_subs_max": ("int", 1),

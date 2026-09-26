@@ -405,6 +405,7 @@ def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (tmp_path / "config" / "settings.yaml").write_text(f"own_channel_id: {OWN}\n", encoding="utf-8")
     for sub in ("prompts", "schemas"):
         shutil.copytree(SRC_ROOT / sub, tmp_path / sub)
+    shutil.copy(SRC_ROOT / "config" / "scoring.yaml", tmp_path / "config" / "scoring.yaml")
     for name in ("YT_API_KEY", "YT_CHANNEL_ID", "YT_CLIENT_SECRET_PATH", "YT_TOKEN_PATH"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(tmp_path)

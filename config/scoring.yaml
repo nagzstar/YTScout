@@ -89,6 +89,12 @@ competitor_metrics:
     - {label: "8–20min", max_seconds: 1200}
     - {label: "20min+", max_seconds: null}
 
+# Video summaries (044): which videos `analyse --summaries` picks. Each channel's outliers
+# (the competitor_metrics rule above) come first, then its newest; channels take turns so
+# a daily poster cannot crowd out the rest. At most this many candidates per channel a run.
+video_summaries:
+  per_channel: 8
+
 # Niche validation (022, DESIGN.md §5.3): how `scout validate` samples a niche.
 niche_validation:
   # A sampled channel is "small" (a newcomer) when it has fewer subscribers than this ...

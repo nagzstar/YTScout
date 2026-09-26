@@ -3,7 +3,9 @@
 ``analyse --summaries``: one ``claude -p`` call per video, results into ``video_summaries``.
 Candidates are videos of the own and ``approved``/``watch`` channels that have had a
 transcript attempt and no summary under the current prompt hash (``repo.summary_candidates``
-has the exact rule). Each video: build the packet, write it under ``data/packets/``, run
+has the exact rule). ``repo.summary_plan`` orders them: own channel first, then each
+competitor's outliers before its newest, channels round-robin, ``per_channel`` at most
+each (044). Each video: build the packet, write it under ``data/packets/``, run
 Claude, store the validated output with both hashes and commit. A call that fails stops
 the run and is reported; what was stored before it stays.
 
@@ -49,6 +51,9 @@ def summarise_videos(
     repo_root: Path,
     packets_dir: Path,
     limit: int = DEFAULT_LIMIT,
+    per_channel: int | None = None,
+    outlier_multiplier: float = 3.0,
+    outlier_window: int = 30,
     model: str | None = None,
     prompt_path: Path | None = None,
     schema_path: Path | None = None,
@@ -60,7 +65,14 @@ def summarise_videos(
     schema_path = Path(schema_path or default_schema)
     prompt_hash = claude_runner.file_hash(prompt_path)
     counts = SummaryCounts()
-    ids = repo.summary_candidates(conn, prompt_hash, limit)
+    ids = repo.summary_candidates(
+        conn,
+        prompt_hash,
+        limit,
+        per_channel=per_channel,
+        outlier_multiplier=outlier_multiplier,
+        outlier_window=outlier_window,
+    )
     counts.candidates = len(ids)
     for video_id in ids:
         packet = packets.video_packet(conn, video_id)

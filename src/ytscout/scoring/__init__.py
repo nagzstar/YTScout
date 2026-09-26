@@ -10,6 +10,7 @@ from ytscout.scoring.config import (
     metrics_config,
     niche_scoring_config,
     shorts_max_seconds,
+    summaries_per_channel,
     validation_config,
 )
 
@@ -22,6 +23,7 @@ __all__ = [
     "metrics_config",
     "niche_scoring_config",
     "shorts_max_seconds",
+    "summaries_per_channel",
     "validation_config",
     "ValidationConfig",
 ]

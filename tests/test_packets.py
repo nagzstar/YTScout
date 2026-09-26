@@ -153,9 +153,9 @@ def test_write_packet_names_and_numbers(tmp_path: Path, monkeypatch: pytest.Monk
 
 def test_summary_candidates_rule(conn: sqlite3.Connection) -> None:
     seed(conn)
-    # v3 has no transcript attempt; r1 is rejected. Newest first.
-    assert repo.summary_candidates(conn, "h1", 40) == ["c1", "v2", "v1"]
-    assert repo.summary_candidates(conn, "h1", 2) == ["c1", "v2"]
+    # v3 has no transcript attempt; r1 is rejected. Own channel first, then newest.
+    assert repo.summary_candidates(conn, "h1", 40) == ["v2", "v1", "c1"]
+    assert repo.summary_candidates(conn, "h1", 2) == ["v2", "v1"]
     with conn:
         repo.put_video_summary(
             conn, "v1", prompt_hash="h1", schema_hash="s", transcript_status="ok", summary={}
@@ -164,11 +164,11 @@ def test_summary_candidates_rule(conn: sqlite3.Connection) -> None:
             conn, "v2", prompt_hash="h1", schema_hash="s", transcript_status="error", summary={}
         )
     assert repo.summary_candidates(conn, "h1", 40) == ["c1"]
-    assert repo.summary_candidates(conn, "h2", 40) == ["c1", "v2", "v1"]
+    assert repo.summary_candidates(conn, "h2", 40) == ["v2", "v1", "c1"]
     # v2's transcript arrives: its titles-only summary under h1 is redone.
     with conn:
         repo.put_transcript(conn, "v2", language="en", text="now", source="auto", status="ok")
-    assert repo.summary_candidates(conn, "h1", 40) == ["c1", "v2"]
+    assert repo.summary_candidates(conn, "h1", 40) == ["v2", "c1"]
     assert conn.execute("SELECT COUNT(*) FROM transcripts WHERE video_id = 'v2'").fetchone()[0] == 1
 
 
@@ -182,13 +182,13 @@ def test_summarise_writes_rows_and_skips_done_ones(
     packets_dir = tmp_path / "packets"
     counts = summarise_videos(conn, repo_root=SRC_ROOT, packets_dir=packets_dir, limit=2)
     assert (counts.done, counts.candidates, counts.failure) == (2, 2, None)
-    assert counts.done_ids == ["c1", "v2"]
+    assert counts.done_ids == ["v2", "v1"]
     prompt_hash = file_hash(SRC_ROOT / "prompts" / "video_summary.md")
     schema_hash = file_hash(SRC_ROOT / "schemas" / "video_summary.json")
-    row = repo.get_video_summary(conn, "c1", prompt_hash)
+    row = repo.get_video_summary(conn, "v2", prompt_hash)
     assert row is not None
     assert row["schema_hash"] == schema_hash
-    assert row["transcript_status"] == "unavailable"
+    assert row["transcript_status"] == "error"
     summary = json.loads(row["summary_json"])
     assert summary["hook_type"] == "question" and summary["claims_count"] == 0
     assert sorted(p.name for p in packets_dir.glob("*.json")) == [
@@ -200,7 +200,9 @@ def test_summarise_writes_rows_and_skips_done_ones(
     assert argv[1].endswith("video_summary-2.json")
 
     counts = summarise_videos(conn, repo_root=SRC_ROOT, packets_dir=packets_dir)
-    assert (counts.done, counts.candidates) == (1, 1) and counts.done_ids == ["v1"]
+    assert (counts.done, counts.candidates) == (1, 1) and counts.done_ids == ["c1"]
+    row = repo.get_video_summary(conn, "c1", prompt_hash)
+    assert row is not None and row["transcript_status"] == "unavailable"
     counts = summarise_videos(conn, repo_root=SRC_ROOT, packets_dir=packets_dir)
     assert (counts.done, counts.candidates) == (0, 0)
 
@@ -226,7 +228,7 @@ def test_summarise_stops_at_first_failure_and_keeps_earlier_rows(
     seed(conn)
     monkeypatch.setenv("FAKE_CLAUDE_OUTPUT", "garbage")
     counts = summarise_videos(conn, repo_root=SRC_ROOT, packets_dir=tmp_path)
-    assert counts.done == 0 and counts.failed_video_id == "c1"
+    assert counts.done == 0 and counts.failed_video_id == "v2"
     assert "no JSON result object" in (counts.failure or "")
     assert conn.execute("SELECT COUNT(*) FROM video_summaries").fetchone()[0] == 0
 
@@ -242,6 +244,7 @@ def repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (tmp_path / "config" / "settings.yaml").write_text(f"own_channel_id: {OWN}\n", encoding="utf-8")
     for sub in ("prompts", "schemas"):
         shutil.copytree(SRC_ROOT / sub, tmp_path / sub)
+    shutil.copy(SRC_ROOT / "config" / "scoring.yaml", tmp_path / "config" / "scoring.yaml")
     for name in ("YT_API_KEY", "YT_CHANNEL_ID", "YT_CLIENT_SECRET_PATH", "YT_TOKEN_PATH"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(tmp_path)
@@ -299,7 +302,7 @@ def test_cli_analyse_summaries_runs_and_then_has_nothing_to_do(
     assert main(["analyse", "--summaries", "--limit", "1"]) == EXIT_OK
     out = capsys.readouterr().out
     assert "1 of 1 candidates summarised" in out
-    assert "  c1: question" in out
+    assert "  v2: question" in out
     assert _count(repo_root) == 1
     assert Path(fake_claude.record()["cwd"]).resolve() == repo_root.resolve()
     assert main(["analyse", "--summaries"]) == EXIT_OK
@@ -330,7 +333,7 @@ def test_cli_analyse_failure_exit_codes(
 ) -> None:
     monkeypatch.setenv("FAKE_CLAUDE_EXIT", "2")
     assert main(["analyse", "--summaries"]) == EXIT_CLAUDE_UNAVAILABLE
-    assert "claude failed on c1: claude exited 2" in capsys.readouterr().err
+    assert "claude failed on v2: claude exited 2" in capsys.readouterr().err
     assert _count(repo_root) == 0
     c = sqlite3.connect(repo_root / "data" / "ytscout.sqlite")
     assert c.execute("SELECT status FROM runs").fetchone()[0] == "error"
@@ -342,7 +345,11 @@ def test_cli_analyse_dry_run_lists_and_calls_nothing(
 ) -> None:
     assert main(["analyse", "--summaries", "--dry-run", "--limit", "2"]) == EXIT_OK
     out = capsys.readouterr().out
-    assert "  c1\n  v2\n" in out and "candidates: 2" in out
+    assert "  v2 Countdown Animal Kingdom: 101 views (newest)\n" in out
+    assert "  v1 Countdown Animal Kingdom: 100 views (newest)\n" in out
+    assert "candidates: 2" in out
+    assert "per channel (limit 2, at most 8 each, outlier >= 3x median):" in out
+    assert "  Countdown Animal Kingdom: 2 (0 outliers)" in out
     assert "claude: ok" in out
     assert "--permission-prompts none" in out and "--bare" not in out
     assert _count(repo_root) == 0
