@@ -48,3 +48,36 @@ baseline is a fifth fresh.
 
 `DESIGN.md §6` for the metric definitions. `competitor_analyses.id 3` caveats for the
 symptom.
+
+## Outcome (closed 2026-09-26)
+
+Delivered in `9bca39e`.
+
+- `config/scoring.yaml` `competitor_metrics.min_age_days: 7`; `MetricsConfig.min_age_days`
+  (dataclass default 0 so older fixtures keep their numbers; `metrics_config` requires the
+  key, rejects negatives). `scoring.metrics.is_settled(published_at, now, days)` is the one
+  rule; age exactly `min_age_days` is settled.
+- `channel_metrics`: unsettled videos are out of `window_views`, `views_median/p25/p75/max`,
+  `views_per_sub`, the outlier baseline (newest 30 *settled* in-format videos) and
+  `outlier_ids`/`outlier_count`; they still count in `video_count` and `uploads_per_week`.
+  New `video_count_settled`. Velocity, length buckets and title features still use every
+  window video (velocity already needs ≥ 2 snapshots). Note `share_of_tracked_views` now
+  divides settled views only.
+- Packet: every video carries `settled`; channel `views_median` from settled videos only;
+  `meta.min_age_days`. `competitor_packet(conn, *, min_age_days, now=None)` — the keyword is
+  required; `analyse_competitors` and `analyse --competitors --dry-run` read it from
+  scoring.yaml. The dry run prints `(N unsettled)` per channel.
+- Prompt: unsettled videos are not evidence of performance either way, never in
+  above/below-median lists; they may be cited for topic/hook/title. Prompt hash changed.
+- DESIGN.md §4.4 gained a settling line.
+
+Checked: `pytest -q` 558 passed; `ruff check`/`ruff format --check` clean;
+`score --competitors` on the real DB exit 0, own 90d Shorts `views_median` 1,102 → 1,202
+(3 of 9 videos settled — the own channel is young, so its median rests on few videos for
+now); `analyse --competitors --dry-run` exit 0 (own 6 unsettled, Beast tier 2, Woofy 4).
+The worked example (5 videos, one 2 days old with 10 views: median 250 not 200,
+uploads_per_week 5/(90/7)) is in `tests/test_metrics.py`, where `channel_metrics` is
+tested, rather than `tests/test_scoring.py`. No API units or `claude -p` calls spent.
+
+For the next issue: dashboard median columns change meaning (settled only) with no UI
+label yet; `video_count_settled` is available if a column is wanted.
