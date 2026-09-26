@@ -1,6 +1,6 @@
 # 051 — Decide what the £/month estimate should anchor on
 
-**Type**: Active
+**Type**: AFK
 **Blocked by**: 049
 **Add dirs**: none
 **Model**: claude-opus-5-5 medium
@@ -18,12 +18,13 @@ score useless for comparing Shorts niches against each other, which is half the 
 
 ## Scope
 
-- Nagz decides, with Claude alongside, what "a newcomer's monthly views" should mean.
-  Candidates: p75 of small channels ("a good newcomer"), the median of small channels
-  that have at least one outlier, or the median of small channels active in the last 90
-  days rather than all small channels. Whatever is chosen goes in `config/scoring.yaml`
-  as a named threshold, not in code.
-- Re-run this after 049, because polluted samples change the percentiles.
+- **Decided 2026-09-26: newcomer monthly views = the 75th percentile of monthly views
+  over small channels that published at least one video in the last `window_days`.** "A
+  good newcomer", not the typical one. Put the percentile (`newcomer_views_percentile:
+  75`) and the active-in-window rule in `config/scoring.yaml` under `niche_scoring`, as
+  named thresholds, not in code. Keep reporting p25 and p75 of the same active set as the
+  band; the £ band label on the dashboard must say which percentile the estimate is.
+- Runs after 049 (Blocked by), because polluted samples change the percentiles.
 - Update `DESIGN.md §6.3` and the dashboard's £ band label to match.
 - Re-score the 027 niches from stored data and put both rankings in the Outcome. No API
   units.
