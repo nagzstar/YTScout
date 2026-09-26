@@ -58,3 +58,31 @@ circuit breaker never trips because the failure is not `RequestBlocked`.
 breaker. `DESIGN.md §8.3`. The 01:04 run the same day *did* fetch 32 transcripts before
 being IP-blocked, so the verification failure may be intermittent (Avast interception
 switching on); the fix must work in both states, which passing the bundle does.
+
+## Outcome (closed 2026-09-26)
+
+Delivered:
+
+- `transcripts.configure(ca_certs: Path | None)` plus `_api()`: when configured, every
+  library call gets `YouTubeTranscriptApi(http_client=session)` with
+  `session.verify = str(ca_certs)`. Unconfigured keeps the library default. A new session
+  per video (as before, the library made one per `YouTubeTranscriptApi()`).
+- `cli._collect_transcripts` calls `transcripts.configure(tls.ca_bundle(settings.data_dir).path)`
+  on a real run only, so env overrides (`HTTPLIB2_CA_CERTS`, `REQUESTS_CA_BUNDLE`) win exactly
+  as for the Data API transport. `--dry-run` does not touch `tls`.
+- Breaker: `collect.transcripts.SYSTEMIC_ERRORS = {"SSLError", "ConnectionError"}`. A
+  `blocked` result or an `error` with one of those details extends the streak; anything else
+  resets it. Blocks and systemic errors share one streak (both mean "the next video will fail
+  the same way"). New `TranscriptCounts.stopped_on` holds the last detail; the CLI line is now
+  `stopped after N consecutive <detail>; M candidates untouched`.
+
+Proved by tests (`tests/test_transcripts.py`): session `verify` equals the configured path
+(fake `YouTubeTranscriptApi`), and via the CLI equals `tls.ca_bundle(data_dir).path`; 5
+consecutive `SSLError` stop with `stopped_after == 5` and 3 of 8 untouched with no rows
+written; mixed `SSLError`/ok/`SSLError`/other error does not stop; `--dry-run` writes no
+`ca-bundle.pem`. Ran `collect --transcripts --dry-run` on the real DB: 100 candidates, the
+existing `data/ca-bundle.pem` mtime unchanged. pytest 546 passed, ruff clean.
+
+Not verified: that the bundle cures the live `CERTIFICATE_VERIFY_FAILED` (no real network
+calls allowed). The next weekly run shows it. A systemic failure still costs 5 × 21 s of
+backoff before the breaker trips, about 2 minutes instead of 37.
