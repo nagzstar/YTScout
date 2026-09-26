@@ -88,6 +88,7 @@ from ytscout.scoring import (
 from ytscout.scoring.metrics import FORMATS
 from ytscout.scout import propose as scout_propose
 from ytscout.scout import score as scout_score
+from ytscout.scout import sensitivity as scout_sensitivity
 from ytscout.scout import snowball as scout_snowball
 from ytscout.scout import tag as scout_tag
 from ytscout.scout import validate as scout_validate
@@ -138,9 +139,8 @@ EXIT_CLAUDE_UNAVAILABLE = 5
 STUBS: dict[str, tuple[str, str]] = {}
 
 # scout subcommand -> (help text, issue that delivers it); these exit 2 until then.
-SCOUT_STUBS: dict[str, tuple[str, str]] = {
-    "sensitivity": ("re-score five niches under threshold changes", "028"),
-}
+# Empty since 028: every scout subcommand is real. Kept so a future one can stub in.
+SCOUT_STUBS: dict[str, tuple[str, str]] = {}
 
 COMMANDS: tuple[str, ...] = (
     "doctor",
@@ -436,6 +436,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_quota_flags(snowball)
     snowball.set_defaults(func=cmd_scout_snowball)
+    sensitivity = scout_sub.add_parser(
+        "sensitivity",
+        help="re-score the scored/tracked niches under a 27-cell threshold grid, in memory"
+        " (no API, no DB writes) and write docs/sensitivity.md",
+    )
+    sensitivity.add_argument(
+        "--niches",
+        type=_id_list,
+        metavar="ID,ID,...",
+        help="niche ids to run instead of every scored/tracked niche",
+    )
+    sensitivity.add_argument(
+        "--out",
+        type=Path,
+        default=Path(scout_sensitivity.DEFAULT_OUT),
+        help=f"where to write the report (default {scout_sensitivity.DEFAULT_OUT},"
+        " relative to the repo root)",
+    )
+    sensitivity.set_defaults(func=cmd_scout_sensitivity)
     for name, (help_text, issue) in SCOUT_STUBS.items():
         stub = scout_sub.add_parser(name, help=f"{help_text} (issue {issue})")
         stub.set_defaults(func=_make_stub(f"scout {name}", issue), stub=True)
@@ -470,6 +489,26 @@ def _positive_int(value: str) -> int:
     if number < 1:
         raise argparse.ArgumentTypeError(f"must be at least 1, got {number}")
     return number
+
+
+def _id_list(value: str) -> list[int]:
+    """``1,3,33`` -> ``[1, 3, 33]``; blanks ignored, duplicates kept once, order kept."""
+    ids: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            number = int(part)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"not a niche id: {part!r}") from None
+        if number < 1:
+            raise argparse.ArgumentTypeError(f"niche ids start at 1, got {number}")
+        if number not in ids:
+            ids.append(number)
+    if not ids:
+        raise argparse.ArgumentTypeError("expected at least one niche id, e.g. --niches 1,3")
+    return ids
 
 
 def _non_negative_int(value: str) -> int:
@@ -2412,6 +2451,77 @@ def cmd_scout_tag(args: argparse.Namespace, _extras: list[str]) -> int:
     if result.failure:
         print(f"scout tag: claude failed: {result.failure}", file=sys.stderr)
         return EXIT_CLAUDE_UNAVAILABLE
+    return EXIT_OK
+
+
+def cmd_scout_sensitivity(args: argparse.Namespace, _extras: list[str]) -> int:
+    """``scout sensitivity``: the 27-cell threshold grid over the scored/tracked niches,
+    on an in-memory copy of the DB. No API call, no DB write; prints the summary and
+    writes the report (028)."""
+    found = _dashboard_db_path("scout sensitivity")
+    if found is None:
+        return EXIT_ERROR
+    root, db_path = found
+    if not db_path.is_file():
+        print(
+            f"scout sensitivity: no database at {db_path}; run `score --niches` first",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+    try:
+        settings: Settings | None = load(repo_root=root)
+    except SettingsMissing:
+        settings = None
+    except SettingsError as exc:
+        print(f"scout sensitivity: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        cfg = niche_scoring_config(load_scoring(root / SCORING_RELPATH))
+        rpm = scout_propose.load_rpm_tiers(root / scout_propose.RPM_TIERS_RELPATH)
+        steps = load_steps(root / STEPS_RELPATH)
+        coverage = load_coverage(root / COVERAGE_RELPATH)
+    except (scout_propose.ScoutConfigError, AuditError, ScoringConfigError) as exc:
+        print(f"scout sensitivity: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    # A migrated in-memory copy: the real file is opened read-only and never written.
+    conn = read_copy(db_path)
+    try:
+        niches, missing = scout_sensitivity.target_niches(conn, args.niches)
+        if missing:
+            print(
+                f"scout sensitivity: no niche with id {', '.join(map(str, missing))}",
+                file=sys.stderr,
+            )
+            return EXIT_ERROR
+        if not niches:
+            print(
+                "scout sensitivity: no scored or tracked niches; run `score --niches` first"
+                " (or name niches with --niches)"
+            )
+            return EXIT_OK
+        result = scout_sensitivity.run_grid(
+            conn,
+            niches,
+            cfg=cfg,
+            rpm=rpm,
+            steps=steps,
+            coverage=coverage,
+            usd_gbp=settings.usd_gbp if settings else DEFAULT_USD_GBP,
+            now=utc_now(),
+        )
+    finally:
+        conn.close()
+    if not result.niche_ids:
+        print(
+            f"scout sensitivity: nothing to run; {result.skipped_untagged} untagged niche(s)"
+            " skipped (run `scout tag`)"
+        )
+        return EXIT_OK
+    print(scout_sensitivity.format_summary(result))
+    out: Path = args.out if args.out.is_absolute() else root / args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(scout_sensitivity.format_report(result), encoding="utf-8")
+    print(f"scout sensitivity: wrote {out}; 0 API units spent, no DB writes")
     return EXIT_OK
 
 

@@ -10,7 +10,6 @@ import pytest
 
 from ytscout.cli import (
     COMMANDS,
-    EXIT_NOT_IMPLEMENTED,
     EXIT_OK,
     SCOUT_STUBS,
     STUBS,
@@ -62,26 +61,18 @@ def test_no_command_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None
     assert "usage" in capsys.readouterr().err
 
 
-def test_no_top_level_stubs_are_left() -> None:
-    """Every top-level command is real since 021; only scout subcommands still stub."""
+def test_no_stubs_are_left() -> None:
+    """Every top-level command is real since 021 and every scout subcommand since 028."""
     assert STUBS == {}
-    assert set(SCOUT_STUBS) == {"sensitivity"}
+    assert SCOUT_STUBS == {}
 
 
-@pytest.mark.parametrize("name", sorted(SCOUT_STUBS))
-def test_each_scout_stub_exits_2_with_not_implemented_line(
-    name: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    code = main(["scout", name])
-    assert code == EXIT_NOT_IMPLEMENTED
-    err = capsys.readouterr().err
-    assert err.startswith(f"ytscout scout {name}: not implemented yet (issue ")
-
-
-def test_scout_stub_swallows_future_flags(capsys: pytest.CaptureFixture[str]) -> None:
-    """A future flag on a stub is still a 2, not a usage error."""
-    assert main(["scout", "sensitivity", "--max-units", "500"]) == EXIT_NOT_IMPLEMENTED
-    assert "not implemented" in capsys.readouterr().err
+def test_scout_sensitivity_rejects_quota_flags(capsys: pytest.CaptureFixture[str]) -> None:
+    """The stub swallowed --max-units; the real command spends no units and refuses it."""
+    with pytest.raises(SystemExit) as excinfo:
+        main(["scout", "sensitivity", "--max-units", "500"])
+    assert excinfo.value.code == 2
+    assert "unrecognized" in capsys.readouterr().err
 
 
 def test_scout_without_a_subcommand_is_a_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
