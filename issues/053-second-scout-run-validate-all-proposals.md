@@ -1,7 +1,7 @@
 # 053 — Second scout run: validate every open proposal
 
 **Type**: Active
-**Blocked by**: 049, 052
+**Blocked by**: 049, 052, 054, 055
 **Add dirs**: none
 **Model**: claude-opus-5-5 medium
 **Covers**: data/ytscout.sqlite, dashboard/index.html
@@ -34,8 +34,10 @@ are already tracked; nothing validates proposals unattended.
   .venv\Scripts\python.exe -m ytscout dashboard
   ```
   `scout tag` is real `claude -p`: up to 8 calls (5 niches per call).
-- Read the Niches table with Claude alongside. Track the top 5 by score per format
-  (5 Shorts, 5 long-form) and shelve the rest, so the weekly refresh starts building
+- Read the Niches table with Claude alongside, sorted by months to Partner Programme
+  (054) with the reused-content risk column (055) visible. Track the 10 niches that reach
+  monetisation soonest regardless of format, skipping `high` reused-content risk unless
+  the reason is unconvincing, and shelve the rest, so the weekly refresh starts building
   12-month history for the candidates only.
 - Do not run `sensitivity` (028) or change `config/scoring.yaml` here.
 
@@ -52,8 +54,8 @@ are already tracked; nothing validates proposals unattended.
       `proposed` or `validated`.
 - [ ] `ytscout score` exits 0 and every tracked niche has a `niche_scores` row.
 - [ ] Outcome: units spent per day and in total, the number of `claude -p` calls, the
-      ranked table (label / score / opportunity / £ band / h per month / small-channel
-      count) for the ten tracked niches, and the new issue numbers for anything wrong.
+      ranked table (label / months to YPP / reused-content risk / score / opportunity / £ band /
+      h per month / small-channel count) for the ten tracked niches, and the new issue numbers for anything wrong.
       No own-channel revenue or RPM figures.
 
 ## Notes

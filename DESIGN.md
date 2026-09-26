@@ -44,6 +44,8 @@ These were settled in the design conversation. Do not reopen them without a reas
 | 14 | LLM | **Claude, via Nagz's Claude subscription — no Anthropic API key.** Implemented by calling Claude Code non-interactively (`claude -p`). | Nagz's constraint. Verified against Claude Code docs (see §7). |
 | 15 | Competitor selection | **Auto-discover via API search around the niche; Nagz approves/rejects** in the dashboard. | Catches competitors he doesn't know about. Quota cost is bounded. |
 | 16 | Cadence | **Weekly refresh, 12-month rolling history.** | Cheap on quota, enough to see trend direction for niches and competitors. |
+| 17 | What is the scout optimising for? (added 2026-09-27) | **Time to Partner Programme monetisation, whichever format gets there first.** `score` stays £ ÷ manual hours (decision 2); a `months_to_ypp` estimate per niche × format sits beside it and is the default dashboard sort. Format is a means, not a preference. | Nagz: the goal is a long-term monetised business; "short form or long form doesn't matter, just getting to the goal quicker". A niche that pays well but takes years to reach 1,000 subs + 4,000 watch hours / 10M Shorts views is not quicker. Issue 054. |
+| 18 | Reused-content risk (added 2026-09-27) | **Every niche carries a `reused_content_risk` rating from the step tagger, always shown, high risk flagged in the ranking.** | Stock footage + TTS is what YouTube's reused-content policy most often refuses to monetise, and it is what the pipeline makes. Nagz: "we need to always keep this in mind". Issue 055. |
 
 ---
 
