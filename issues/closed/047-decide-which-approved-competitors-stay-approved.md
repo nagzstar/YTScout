@@ -45,3 +45,31 @@ that Beast tier, CritterClipzLOL, LOWLIGHTS and AstroFact would use better, and 
 
 `issues/closed/008-*.md` and `035-*.md` for the decision flow and undo. The 018 Outcome
 lists what each card said.
+
+## Outcome (closed 2026-09-27)
+
+Decided as recommended, applied with `ytscout decide` (the same writer as the dashboard's
+Review buttons, so `channels.status`, the `decisions` table and `data/decisions.json`
+changed in one transaction each; the audit lines carry `"via": "cli"`):
+
+| Channel | Was | Now | Why |
+|---|---|---|---|
+| Woofy D. Luffy | approved | rejected | 018 card: photo Shorts, "mostly not about animals". Not a competitor. |
+| coco scene | approved | watch | Animal, but caught-on-camera compilations with no ranking. Its "grim fate" titles stay useful as a topic signal, so keep collecting. |
+| Curious Bone | approved | watch | Every upload since 2026-09-04 is a 6–10 minute essay, and the latest five are "Ancient Humans", not animals. Its six packet shorts are pre-pivot. Revisit when a long-form packet exists. |
+
+Verified by running, not reading:
+
+- `ytscout analyse --competitors --dry-run` now lists AstroFact, Beast tier,
+  CritterClipzLOL and LOWLIGHTS beside the own channel: 5 channels, 46 videos, 57,098
+  bytes (was 8 channels, 78 videos, 93,728 bytes).
+- `tail -3 data/decisions.json` shows the three new lines with the new statuses.
+- `ytscout dashboard` rebuilt so the Review page shows the moves.
+
+Deviations from Scope: the decisions were recorded through the CLI rather than by
+clicking in `ytscout serve`, which the guard blocks in a session. The result is the same
+rows. The packet was already Shorts-only because 045 closed before this issue ran, so
+Curious Bone's card was no longer the long-form problem 018 described; `watch` still
+fits because the channel has stopped making Shorts.
+
+Undo: `ytscout decide --channel <id> --set approved`.
