@@ -183,8 +183,11 @@ both formats are supported, see below.
 - **Original footage and presenters: no**, and nothing is planned. Any niche that needs
   either is out.
 - **Specific real footage: only what Storyblocks, Pexels and Pixabay hold.** A niche that
-  needs footage of a particular event, product or place is costed at 2.5 h
-  (`specific_footage_hours`) and the pipeline saves nothing on it.
+  needs footage of a particular event, product or place has `visuals_stock` costed at
+  2.5 h (`specific_footage_hours`) instead of the 1.0 h default, and its `partial`
+  override scales by the same ratio (0.5 h × 2.5/1.0 = 1.25 h): the search-and-download
+  pass takes proportionally longer when the clip has to match something specific, but the
+  contact-sheet review pass the pipeline already does is unchanged by it.
 - **Comments: no.**
 - **Other platforms: parked.** `crosspost.py` and the TikTok, Instagram and Facebook
   uploaders exist but refuse to run while the style guide's `[platforms]` block has them

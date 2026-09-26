@@ -81,7 +81,11 @@ steps:
       videos on the owner's by-eye verdicts. AI stills are local and free (gen_images.py);
       AI motion (gen_clips.py, Replicate) is judged per shot by the user and capped by
       cost. contact_sheet.py is the review grid. This is the largest remaining human step:
-      0.5 h of the 1.0 h default, falling as the footage library fills.
+      0.5 h of the 1.0 h default, falling as the footage library fills. For a niche that
+      needs specific real footage (`needs_specific_footage`), `default_hours` becomes
+      `specific_footage_hours` (2.5 h) and this override scales by the same ratio
+      (0.5 h × 2.5/1.0 = 1.25 h): the manual search-and-download step is what gets harder
+      when the clip has to match something specific, not the contact-sheet review.
 
   footage_original:
     coverage: manual
