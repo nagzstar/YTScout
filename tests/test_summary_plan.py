@@ -127,7 +127,7 @@ def test_packet_videos_are_the_channels_highest_view_summaries(
             repo.put_video_summary(
                 conn, vid, prompt_hash="h", schema_hash="x", transcript_status="ok", summary={}
             )
-    rows = repo.summarised_videos_for_channel(conn, DAILY, 3)
+    rows = repo.summarised_videos_for_channel(conn, DAILY, 3, "shorts")
     assert [r["id"] for r in rows] == ["d00", "d59", "d58"]
     assert [r["views"] for r in rows] == [50_000, 1059, 1058]
     packet = packets.competitor_packet(conn)

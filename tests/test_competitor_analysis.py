@@ -231,6 +231,75 @@ def test_packet_holds_own_then_approved_with_latest_summaries(conn: sqlite3.Conn
     assert "w1" not in json.dumps(packet) and "r1" not in json.dumps(packet)
 
 
+def _add_video(
+    conn: sqlite3.Connection, vid: str, channel: str, *, is_short: bool | None, views: int
+) -> None:
+    """A summarised video of ``channel`` published after everything ``seed`` makes."""
+    with conn:
+        repo.upsert_video(
+            conn,
+            vid,
+            channel_id=channel,
+            title=f"Essay {vid}",
+            description="d",
+            tags=[],
+            published_at="2026-12-01T00:00:00Z",
+            duration_s=45 if is_short else 612,
+            is_short=is_short,
+        )
+        repo.add_video_snapshot(conn, vid, views=views, likes=1, comments=0)
+        repo.put_transcript(conn, vid, language="", text=None, source=None, status="error")
+        repo.put_video_summary(
+            conn,
+            vid,
+            prompt_hash="old",
+            schema_hash="s",
+            transcript_status="error",
+            summary=summary(1, "essay"),
+        )
+
+
+def test_packet_holds_only_shorts(conn: sqlite3.Connection) -> None:
+    seed(conn)
+    # COMP gets one more Short and one long-form video, both summarised; the long one has
+    # the most views, so only the format filter keeps it out. COMP2 gets a long-form video
+    # and one of unknown format; a channel with no Shorts at all appears with no videos.
+    _add_video(conn, "cs", COMP, is_short=True, views=50)
+    _add_video(conn, "cl", COMP, is_short=False, views=10_000_000)
+    _add_video(conn, "dl", COMP2, is_short=False, views=10_000_000)
+    _add_video(conn, "dn", COMP2, is_short=None, views=10_000_000)
+    with conn:
+        repo.upsert_channel(conn, "UCessays", role="competitor", title="Zeta Essays")
+        repo.set_channel_status(conn, "UCessays", "approved")
+    _add_video(conn, "el", "UCessays", is_short=False, views=999)
+    packet = competitor_packet(conn)
+    assert packet["format"] == "shorts" == packet["meta"]["metrics_format"]
+    by_id = {c["id"]: c for c in packet["channels"]}
+    assert [v["video_id"] for v in by_id[COMP]["videos"]] == ["c3", "c2", "c1", "cs"]
+    assert "cl" not in packets.packet_video_ids(packet)
+    assert {"dl", "dn"}.isdisjoint(packets.packet_video_ids(packet))
+    assert by_id["UCessays"]["videos"] == [] and by_id["UCessays"]["views_median"] is None
+    videos = [v for c in packet["channels"] for v in c["videos"]]
+    assert videos and all(v["is_short"] is True for v in videos)
+
+
+def test_summary_candidates_put_shorts_before_long_form(conn: sqlite3.Connection) -> None:
+    seed(conn)
+    # Long-form and unknown-format videos, newer and far more viewed (outliers) than the
+    # channel's Shorts, still wait until every Short candidate is planned.
+    _add_video(conn, "cl", COMP, is_short=False, views=10_000_000)
+    _add_video(conn, "cn", COMP, is_short=None, views=10_000_000)
+    _add_video(conn, "ol", OWN, is_short=False, views=10_000_000)
+    ids = repo.summary_candidates(conn, "new-hash", 100)
+    shorts = {"o1", "o2", "o3", "o4", "c1", "c2", "c3", "d1", "d2", "d3", "w1"}
+    assert set(ids[: len(shorts)]) == shorts
+    assert set(ids[len(shorts) :]) == {"ol", "cl", "cn"}
+    comp = [i for i in ids if i.startswith("c")]
+    assert comp[-2:] in (["cl", "cn"], ["cn", "cl"]) and comp[:3] == ["c3", "c2", "c1"]
+    # per_channel cuts the long-form tail first.
+    assert "cl" not in repo.summary_candidates(conn, "new-hash", 100, per_channel=3)
+
+
 def test_packet_caps_videos_and_reduces_when_large(conn: sqlite3.Connection) -> None:
     seed(conn, own_videos=20)
     packet = competitor_packet(conn)
@@ -461,7 +530,8 @@ def test_cli_competitors_dry_run_calls_nothing_and_writes_nothing(
     assert main(["analyse", "--competitors", "--dry-run"]) == EXIT_OK
     out = capsys.readouterr().out
     assert "dry run: the competitor packet" in out
-    assert f"  {OWN} Countdown Animal Kingdom: 4 summarised videos, role own" in out
+    assert "format: shorts" in out
+    assert f"  {OWN} Countdown Animal Kingdom: 4 summarised shorts, role own" in out
     assert "channels: 3; videos: 10; packet:" in out
     assert "claude: ok" in out
     assert fake_claude.record()["argv"] == ["--version"]  # only the version check ran

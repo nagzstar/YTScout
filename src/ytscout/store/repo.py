@@ -640,6 +640,7 @@ class SummaryCandidate:
     role: str
     views: int | None
     outlier: bool
+    is_short: bool = False
 
 
 def summary_plan(
@@ -663,6 +664,11 @@ def summary_plan(
     biggest first, then its other videos newest first, cut at ``per_channel``. Own channels'
     queues come first; the competitors' are then interleaved round-robin (by channel id) so
     a daily poster cannot crowd out the rest. The whole list is cut at ``limit``.
+
+    Shorts first (045): the competitor packet compares Shorts only, so a channel's queue
+    puts its Shorts ahead of its long-form (and unknown-format) videos, and the plan runs
+    every channel's Shorts before any channel's long-form. Long-form still gets summarised
+    once the Shorts are done, for a later long-form packet.
     """
     rows = conn.execute(
         """
@@ -693,8 +699,8 @@ def summary_plan(
             group.append(row["views"])
     medians = {key: statistics.median(vals) for key, vals in window.items() if vals}
 
-    outliers: dict[str, list[SummaryCandidate]] = {}
-    newest: dict[str, list[SummaryCandidate]] = {}
+    outliers: dict[tuple[str, bool], list[SummaryCandidate]] = {}
+    newest: dict[tuple[str, bool], list[SummaryCandidate]] = {}
     roles: dict[str, str] = {}
     for row in rows:
         if not row["eligible"]:
@@ -707,26 +713,33 @@ def summary_plan(
             and views > 0
             and views >= outlier_multiplier * median
         )
+        is_short = bool(row["is_short"])
         cand = SummaryCandidate(
-            row["id"], row["channel_id"], row["title"], row["role"], views, is_outlier
+            row["id"], row["channel_id"], row["title"], row["role"], views, is_outlier, is_short
         )
         roles[row["channel_id"]] = row["role"]
-        (outliers if is_outlier else newest).setdefault(row["channel_id"], []).append(cand)
+        key = (row["channel_id"], is_short)
+        (outliers if is_outlier else newest).setdefault(key, []).append(cand)
 
     queues: dict[str, list[SummaryCandidate]] = {}
     for channel_id in sorted(roles):
-        # sorted() is stable, so equal views keep newest-first order.
-        queue = sorted(outliers.get(channel_id, []), key=lambda c: -(c.views or 0))
-        queue += newest.get(channel_id, [])
+        queue: list[SummaryCandidate] = []
+        for is_short in (True, False):
+            key = (channel_id, is_short)
+            # sorted() is stable, so equal views keep newest-first order.
+            queue += sorted(outliers.get(key, []), key=lambda c: -(c.views or 0))
+            queue += newest.get(key, [])
         queues[channel_id] = queue if per_channel is None else queue[:per_channel]
 
     plan: list[SummaryCandidate] = []
-    for channel_id, queue in queues.items():
-        if roles[channel_id] == "own":
-            plan.extend(queue)
-    others = [q for cid, q in queues.items() if roles[cid] != "own"]
-    for i in range(max((len(q) for q in others), default=0)):
-        plan.extend(q[i] for q in others if i < len(q))
+    for is_short in (True, False):
+        parts = {cid: [c for c in q if c.is_short is is_short] for cid, q in queues.items()}
+        for channel_id, queue in parts.items():
+            if roles[channel_id] == "own":
+                plan.extend(queue)
+        others = [q for cid, q in parts.items() if roles[cid] != "own"]
+        for i in range(max((len(q) for q in others), default=0)):
+            plan.extend(q[i] for q in others if i < len(q))
     return plan[:limit]
 
 
@@ -794,12 +807,16 @@ def get_video_summary(
 
 # --- competitor analyses (017) --------------------------------------------------------------
 
+_FORMAT_IS_SHORT = {"shorts": 1, "long": 0}
+
 
 def summarised_videos_for_channel(
-    conn: sqlite3.Connection, channel_id: str, limit: int
+    conn: sqlite3.Connection, channel_id: str, limit: int, fmt: str
 ) -> list[sqlite3.Row]:
-    """The channel's most-viewed videos that have a summary (views desc, then newest), with
-    the latest summary and views, so the comparison sees the channel's best work (044).
+    """The channel's most-viewed videos of format ``fmt`` (``shorts`` or ``long``) that have
+    a summary (views desc, then newest), with the latest summary and views, so the
+    comparison sees the channel's best work (044) in one format only (045). Videos of
+    unknown format (``is_short`` NULL) are in neither.
 
     One row per video: the summary row with the newest ``created_at`` (whatever its
     prompt hash) and the latest snapshot's views.
@@ -813,11 +830,11 @@ def summarised_videos_for_channel(
         FROM videos v JOIN video_summaries s ON s.rowid = (
             SELECT rowid FROM video_summaries y WHERE y.video_id = v.id
              ORDER BY y.created_at DESC, y.rowid DESC LIMIT 1)
-        WHERE v.channel_id = ?
+        WHERE v.channel_id = ? AND v.is_short = ?
         ORDER BY views IS NULL, views DESC, v.published_at DESC, v.id
         LIMIT ?
         """,
-        (channel_id, limit),
+        (channel_id, _FORMAT_IS_SHORT[fmt], limit),
     ).fetchall()
 
 

@@ -1711,10 +1711,11 @@ def _print_comparison_plan(conn: sqlite3.Connection, prompt_path: Path, schema_p
     packet = packets.competitor_packet(conn)
     size = len(json.dumps(packet, ensure_ascii=False).encode("utf-8"))
     print("dry run: the competitor packet that would be compared (nothing is called or written)")
+    print(f"format: {packet['format']}")
     for c in packet["channels"]:
         print(
-            f"  {c['id']} {c['title'] or ''}: {len(c['videos'])} summarised videos, "
-            f"role {c['role']}"
+            f"  {c['id']} {c['title'] or ''}: {len(c['videos'])} summarised "
+            f"{packet['format']}, role {c['role']}"
         )
     print(
         f"channels: {len(packet['channels'])}; videos: {len(packets.packet_video_ids(packet))}; "

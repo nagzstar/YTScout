@@ -142,7 +142,10 @@ def _competitor_channel(
 ) -> dict:
     snap = repo.latest_channel_snapshot(conn, channel["id"])
     videos = []
-    for row in repo.summarised_videos_for_channel(conn, channel["id"], videos_per_channel):
+    rows = repo.summarised_videos_for_channel(
+        conn, channel["id"], videos_per_channel, COMPETITOR_FORMAT
+    )
+    for row in rows:
         videos.append(
             {
                 "video_id": row["id"],
@@ -150,6 +153,7 @@ def _competitor_channel(
                 "views": row["views"],
                 "published_at": row["published_at"],
                 "duration_s": row["duration_s"],
+                "is_short": bool(row["is_short"]),
                 "transcript_status": row["transcript_status"],
                 "summary": json.loads(row["summary_json"]) if row["summary_json"] else None,
             }
@@ -167,12 +171,14 @@ def _competitor_channel(
 
 
 def competitor_packet(conn: sqlite3.Connection) -> dict:
-    """The own channel and every ``approved`` channel with their summarised videos.
+    """The own channel and every ``approved`` channel with their summarised Shorts.
 
-    Each channel carries its latest 90-day Shorts ``channel_metrics`` (``None`` when not
-    scored) and its last ``COMPETITOR_VIDEOS`` summarised videos. When the JSON would be
-    over ``COMPETITOR_PACKET_MAX_BYTES`` the packet is rebuilt with
-    ``COMPETITOR_VIDEOS_REDUCED`` per channel and ``meta.reduced`` says so.
+    The packet is one ``format`` (045): only videos of ``COMPETITOR_FORMAT`` are listed, so
+    a channel with no summarised Shorts has an empty ``videos`` list. Each channel carries
+    its latest 90-day Shorts ``channel_metrics`` (``None`` when not scored) and its top
+    ``COMPETITOR_VIDEOS`` summarised Shorts by views. When the JSON would be over
+    ``COMPETITOR_PACKET_MAX_BYTES`` the packet is rebuilt with ``COMPETITOR_VIDEOS_REDUCED``
+    per channel and ``meta.reduced`` says so.
     """
     channels = [
         c for c in repo.tracked_channels(conn) if c["role"] == "own" or c["status"] == "approved"
@@ -195,6 +201,7 @@ def competitor_packet(conn: sqlite3.Connection) -> dict:
             )
         return {
             "own_channel_id": own_id,
+            "format": COMPETITOR_FORMAT,
             "meta": {
                 "built_at": utc_now().isoformat(timespec="seconds").replace("+00:00", "Z"),
                 "metrics_window": COMPETITOR_WINDOW,

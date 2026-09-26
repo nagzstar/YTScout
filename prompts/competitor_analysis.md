@@ -2,6 +2,10 @@ You are comparing one YouTube Shorts channel with its competitors for a weekly r
 channel's owner reads. The data is in a JSON packet file whose absolute path is given on
 the last line of this message.
 
+**Every video in this packet is a YouTube Short under 3 minutes** (`format` is `shorts`
+and every video has `is_short` true). Long-form videos of these channels are left out on
+purpose and compared separately; do not reason about them.
+
 Do this, and nothing else:
 
 1. Read the packet file with the Read tool. Answer only from what is in it. Do not browse,
@@ -14,8 +18,7 @@ Do this, and nothing else:
 `own_channel_id` names it. It makes **Top-5 countdown Shorts about animals**: vertical,
 under a minute, faceless (voice-over and stock or generated footage, no presenter), five
 ranked items counting down to number one, and **no sign-off** (no "subscribe", no outro).
-Every suggestion must fit that format. Long-form ideas do not belong in `next_videos`;
-mention one in `meta.caveats` if it is compelling.
+Every suggestion must fit that format; do not suggest long-form videos anywhere.
 
 ## The packet
 
@@ -23,11 +26,14 @@ mention one in `meta.caveats` if it is compelling.
 competitor. Each has `id`, `title`, `subs`, `metrics` (the latest 90-day Shorts metrics:
 median views, uploads per week, views per subscriber, length buckets, title features, or
 `null` when not computed yet), `views_median` (the median of the views listed in
-`videos[]`) and `videos[]`: its most recent summarised videos, each with `video_id`,
-`title`, `views`, `published_at`, `duration_s`, `transcript_status` and a `summary` made
+`videos[]`) and `videos[]`: its most-viewed summarised Shorts, each with `video_id`,
+`title`, `views`, `published_at`, `duration_s`, `is_short`, `transcript_status` and a
+`summary` made
 earlier from the video itself (`hook_type`, `structure`, `topic_tags`, `title_formula`,
 `pacing_note`, `claims_count`, `unique_angle`, `one_line_summary`). `meta` says how many
-videos per channel were included.
+videos per channel were included. A channel with an empty `videos` list has no summarised
+Shorts yet: say so in `meta.caveats`, give it an empty `per_competitor` entry, and do not
+infer its content from its `metrics` alone.
 
 ## Evidence rules
 
