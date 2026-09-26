@@ -384,12 +384,14 @@ def run_checks(*, offline: bool = False, start: Path | None = None) -> Report:
     if conn is None:
         needs("last weekly run", "no", "the DB")
         needs("quota today", "info", "the DB")
+        needs("money model calibration", "info", "the DB")
     else:
         c = conn
         _guard(report, "last weekly run", "no", lambda: _last_run(c))
         if settings is not None:
             s = settings
             _guard(report, "quota today", "info", lambda: _quota_today(s, c))
+        _guard(report, "money model calibration", "info", lambda: _calibration(root, c))
         conn.close()
     return report
 
@@ -422,6 +424,25 @@ def _quota_today(settings: Settings, conn: sqlite3.Connection) -> Outcome:
         f"{used} used, {ledger.remaining_today()} remaining of {ledger.daily_cap} "
         f"(Pacific day {ledger.today()})"
     )
+
+
+def _calibration(root: Path, conn: sqlite3.Connection) -> Outcome:
+    """Whether own Shorts Analytics carry an RPM to calibrate §6.3 with. Presence only: the
+    RPM itself is own-channel money and is never printed (050)."""
+    # Imported here: scout.score pulls in the collectors, which plain doctor must not load.
+    from ytscout.scoring import money
+    from ytscout.scoring.config import SCORING_RELPATH, load_scoring, shorts_max_seconds
+    from ytscout.scout.score import own_rpm_usd
+    from ytscout.store.db import utc_now
+
+    path = root / SCORING_RELPATH
+    if not path.is_file():
+        return SKIP, f"needs {SCORING_RELPATH}"
+    shorts_max = shorts_max_seconds(load_scoring(path))
+    own = own_rpm_usd(conn, now=utc_now(), shorts_max_seconds=shorts_max)
+    if own is None or own <= 0:
+        return INFO, money.UNCALIBRATED_LABEL
+    return INFO, "calibrated from own Shorts RPM (value not shown)"
 
 
 # --- output ----------------------------------------------------------------------------------

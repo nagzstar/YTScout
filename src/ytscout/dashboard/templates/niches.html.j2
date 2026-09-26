@@ -32,7 +32,7 @@
           <td class="num" title="{{ n.opportunity | full }}">{{ n.opportunity | sig2 }}</td>
           <td class="num" title="{{ n.est_p50 | full }} ({{ n.est_p25 | full }}–{{ n.est_p75 | full }})">£{{ n.est_p50 | sig2 }} (£{{ n.est_p25 | sig2 }}–£{{ n.est_p75 | sig2 }})</td>
           <td class="num" title="{{ n.hours | full }}">{{ n.hours | sig2 if n.hours is not none else "∞" }}</td>
-          <td>{% for f in n.flags %}<span class="badge badge-{{ f }}">{{ f }}</span>{% else %}–{% endfor %}</td>
+          <td>{% for f in n.flags %}<span class="badge badge-{{ f }}">{{ f | flag_label }}</span>{% else %}–{% endfor %}</td>
           <td class="trend">{{ n.trend }}</td>
           <td>{{ n.status or "–" }}</td>
           <td class="actions">

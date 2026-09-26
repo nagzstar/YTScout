@@ -298,4 +298,6 @@ def format_table(result: NicheScoreResult) -> str:
         lines.append("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip())
         if n == 0:
             lines.append("  ".join("-" * w for w in widths))
+    if any(money.UNCALIBRATED in s.flags for s in result.scored):
+        lines.append(f"note: {money.UNCALIBRATED_LABEL} (RPMs are the tier table's mid)")
     return "\n".join(lines)

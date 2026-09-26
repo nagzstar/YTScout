@@ -21,7 +21,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoes
 
 from ytscout.audit import COVERAGE_RELPATH, AuditError, PipelineCoverage, load_coverage
 from ytscout.score import WINDOWS, load_videos
-from ytscout.scoring import opportunity
+from ytscout.scoring import money, opportunity
 from ytscout.scoring.config import (
     SCORING_RELPATH,
     ScoringConfigError,
@@ -672,6 +672,7 @@ def environment() -> Environment:
     env.filters["percent"] = _percent
     env.filters["sig2"] = _sig2
     env.filters["full"] = _full
+    env.filters["flag_label"] = money.flag_label
     return env
 
 

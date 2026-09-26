@@ -370,8 +370,11 @@ def test_niches_render(niche_db: tuple[Path, dict[str, int]], tmp_path: Path) ->
     assert 'data-niche-format-panel="longform" hidden>' in html
     assert "<strong>0.058</strong>" in html and 'title="0.0577778"' in html
     assert "£1.0 (£0.59–£2.1)" in html
-    for flag in ("low_confidence", "uncalibrated", "disqualified"):
+    for flag in ("low_confidence", "disqualified"):
         assert f'<span class="badge badge-{flag}">{flag}</span>' in html
+    # 050: the bare word sent readers hunting for a bug; the badge says why.
+    uncal = '<span class="badge badge-uncalibrated">uncalibrated: no monetised views yet</span>'
+    assert uncal in html
     assert "∞" in html  # disqualified: NULL hours
     decisions = re.findall(r'<button [^>]*data-kind="niche"[^>]*>', html)
     assert len(decisions) == 6

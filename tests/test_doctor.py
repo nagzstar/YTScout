@@ -5,6 +5,7 @@ Every network or process probe is monkeypatched; nothing here reaches Google or 
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,8 +16,10 @@ from ytscout import doctor
 from ytscout.cli import EXIT_ERROR, EXIT_OK, main
 from ytscout.settings import load
 from ytscout.store import connect, default_db_path, repo
+from ytscout.store.db import utc_now
 from ytscout.youtube import FakeTransport, Ledger
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 SECRET = "SECRET123"
 CHANNEL = "UCdoctortest"
 
@@ -37,6 +40,7 @@ ROW_NAMES = [
     "pipeline_coverage.yaml present",
     "last weekly run",
     "quota today",
+    "money model calibration",
 ]
 # The fixture replaces the probes; tests of the probes themselves call these originals.
 REAL_PROBE_DATA_API = doctor.probe_data_api
@@ -61,6 +65,7 @@ def root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         encoding="utf-8",
     )
     (tmp_path / "config" / "pipeline_coverage.yaml").write_text("steps: []\n", encoding="utf-8")
+    shutil.copy(REPO_ROOT / "config" / "scoring.yaml", tmp_path / "config" / "scoring.yaml")
     (tmp_path / ".env").write_text(f"YT_API_KEY={SECRET}\n", encoding="utf-8")
     for var in ("YT_API_KEY", "YT_CLIENT_SECRET_PATH", "YT_TOKEN_PATH", "YT_CHANNEL_ID"):
         monkeypatch.delenv(var, raising=False)
@@ -323,3 +328,31 @@ def test_doctor_does_not_import_collectors() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     ).stdout
     assert out.strip() == "False"
+
+
+def test_calibration_row_says_why_and_never_prints_the_rpm(root: Path) -> None:
+    settings = load()
+    conn = connect(default_db_path(settings))
+    end = utc_now().date().isoformat()
+    with conn:
+        repo.upsert_channel(conn, CHANNEL, role="own")
+        repo.upsert_video(conn, "own1", channel_id=CHANNEL, published_at=utc_now(), duration_s=30)
+        repo.upsert_own_analytics(conn, "own1", "2025-07-28", end, views=5_000, rpm_usd=None)
+    conn.close()
+    row = _rows(doctor.run_checks(offline=True))["money model calibration"]
+    assert (row.status, row.reason) == (doctor.INFO, "uncalibrated: no monetised views yet")
+
+    conn = connect(default_db_path(settings))
+    with conn:
+        repo.upsert_own_analytics(conn, "own1", "2025-07-28", end, views=5_000, rpm_usd=0.1234)
+    conn.close()
+    row = _rows(doctor.run_checks(offline=True))["money model calibration"]
+    assert row.status == doctor.INFO
+    assert row.reason == "calibrated from own Shorts RPM (value not shown)"
+    assert "0.12" not in row.reason
+
+
+def test_calibration_row_skips_without_scoring_config(root: Path) -> None:
+    (root / "config" / "scoring.yaml").unlink()
+    row = _rows(doctor.run_checks(offline=True))["money model calibration"]
+    assert row.status == doctor.SKIP

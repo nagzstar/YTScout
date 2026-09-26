@@ -11,6 +11,15 @@ from typing import Protocol
 
 REFERENCE_ROW: tuple[str, str] = ("animals_nature", "shorts")
 UNCALIBRATED = "uncalibrated"
+# What the flag means when it shows: the own channel has no monetised views in the
+# calibration window (not yet in the Partner Programme, 050), so RPMs are the table's own.
+UNCALIBRATED_LABEL = "uncalibrated: no monetised views yet"
+FLAG_LABELS: dict[str, str] = {UNCALIBRATED: UNCALIBRATED_LABEL}
+
+
+def flag_label(flag: str) -> str:
+    """The reader-facing text for a confidence flag; the bare flag when it has none."""
+    return FLAG_LABELS.get(flag, flag)
 
 
 class RpmRowLike(Protocol):
