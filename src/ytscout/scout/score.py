@@ -19,8 +19,9 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ytscout.audit import PipelineCoverage, Step
-from ytscout.scoring import effort, final, money, opportunity
+from ytscout.scoring import RelevanceConfig, effort, final, money, opportunity
 from ytscout.scoring.types import ChannelSample, NicheSample, VideoSample
+from ytscout.scout import relevance as relevance_gate
 from ytscout.store import repo, to_utc_iso
 from ytscout.youtube import parse_dt
 
@@ -37,8 +38,9 @@ def _dt(value: str | None) -> datetime | None:
 def build_sample(
     conn: sqlite3.Connection, niche_id: int, cfg: Mapping[str, Any], *, now: datetime
 ) -> NicheSample:
-    """Every channel linked to the niche, with its latest subscriber count, creation date
-    and every video that has a publish date and a snapshot (latest views).
+    """Every channel linked to the niche and not excluded by the relevance gate (049), with
+    its latest subscriber count, creation date and every video that has a publish date and
+    a snapshot (latest views).
 
     ``cfg`` is ``scoring.niche_scoring_config``; the scorers do the window and format
     filtering themselves, so all videos are loaded.
@@ -60,6 +62,8 @@ def build_sample(
         )
     channels = []
     for link in repo.niche_channels(conn, niche_id):
+        if link["excluded_reason"] is not None:
+            continue
         cid = link["channel_id"]
         snap = repo.latest_channel_snapshot(conn, cid)
         channel = repo.get_channel(conn, cid)
@@ -118,6 +122,9 @@ class NicheScore:
     format: str
     values: dict[str, float | None]
     flags: list[str]
+    # Channels in niche_channels, and how many of them the relevance gate left out (049).
+    sampled: int = 0
+    excluded: int = 0
 
     @property
     def score(self) -> float:
@@ -143,6 +150,7 @@ def score_niche(
 ) -> NicheScore:
     """One niche through §6.1-6.5. ``calibration`` is ``calibration_from_db``'s answer."""
     fmt = niche["format"]
+    links = repo.niche_channels(conn, niche["id"])
     sample = build_sample(conn, niche["id"], cfg, now=now)
     opp, flags = opportunity.opportunity(sample, cfg)
     flags = list(flags)
@@ -192,6 +200,8 @@ def score_niche(
             "score": value,
         },
         flags=flags,
+        sampled=len(links),
+        excluded=sum(1 for link in links if link["excluded_reason"] is not None),
     )
 
 
@@ -215,16 +225,23 @@ def score_niches(
     usd_gbp: float,
     now: datetime,
     niche_ids: Collection[int] | None = None,
+    relevance: RelevanceConfig | None = None,
 ) -> NicheScoreResult:
     """Score every tagged validated/scored/tracked niche (only ``niche_ids`` when given);
     append one row each, in one transaction; ``validated`` becomes ``scored``. Untagged
-    niches are skipped and counted."""
+    niches are skipped and counted.
+
+    With ``relevance``, the relevance gate first re-screens every sampled niche's channels
+    (shelved niches too, for the dashboard), in the same transaction. Without it the stored
+    verdicts stand."""
     steps = list(steps)
     result = NicheScoreResult(scored_at=to_utc_iso(now))
     calibration = calibration_from_db(
         conn, rpm, now=now, shorts_max_seconds=int(cfg["shorts_max_seconds"])
     )
     with conn:
+        if relevance is not None:
+            relevance_gate.refresh_all(conn, relevance, niche_ids)
         for niche in repo.scorable_niches(conn):
             if niche_ids is not None and niche["id"] not in niche_ids:
                 continue
@@ -256,7 +273,7 @@ def _num(value: float | None, fmt: str) -> str:
 
 def format_table(result: NicheScoreResult) -> str:
     """The ranked table: best £ per manual hour first."""
-    rows = [("#", "id", "label", "format", "score", "opp", "£/mo", "h/mo", "flags")]
+    rows = [("#", "id", "label", "format", "kept", "score", "opp", "£/mo", "h/mo", "flags")]
     for i, s in enumerate(result.ranked(), 1):
         v = s.values
         rows.append(
@@ -265,6 +282,7 @@ def format_table(result: NicheScoreResult) -> str:
                 str(s.niche_id),
                 s.label[:48],
                 s.format,
+                f"{s.sampled - s.excluded}/{s.sampled}",
                 _num(v["score"], ".3f"),
                 _num(v["opportunity"], ".3f"),
                 _num(v["est_monthly_gbp"], ",.2f"),

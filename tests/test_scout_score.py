@@ -51,7 +51,7 @@ def add_channel(conn: sqlite3.Connection, ch: ChannelSample, niche_id: int) -> N
             conn,
             vid,
             channel_id=cid,
-            title=f"{ch.channel_id} video {i} ({v.views} views)",
+            title=f"{ch.channel_id} animals video {i} ({v.views} views)",
             published_at=v.published_at,
             duration_s=v.duration_s,
         )
@@ -315,7 +315,7 @@ def test_ranked_table_lists_best_first(conn: sqlite3.Connection) -> None:
     result = run_score(conn)
     table = scout_score.format_table(result)
     lines = table.splitlines()
-    assert lines[0].split()[:5] == ["#", "id", "label", "format", "score"]
+    assert lines[0].split()[:6] == ["#", "id", "label", "format", "kept", "score"]
     assert "Top 5 countdown: dangerous-animals" in lines[2]
     assert "low_confidence" in lines[2]
     assert "Top 5 countdown: other" in lines[3]
@@ -344,11 +344,11 @@ def test_tag_packet_carries_niche_fields_and_top_titles(conn: sqlite3.Connection
     assert n["niche_id"] == niche_id and n["format"] == "shorts"
     assert n["queries"] == ["q1", "q2", "q3"] and n["why_ai_able"] == "stock and TTS"
     assert n["sample_titles"] == [
-        "D video 0 (600000 views)",
-        "C video 0 (90000 views)",
-        "F video 0 (70000 views)",
-        "D video 1 (60000 views)",
-        "D video 2 (60000 views)",
+        "D animals video 0 (600000 views)",
+        "C animals video 0 (90000 views)",
+        "F animals video 0 (70000 views)",
+        "D animals video 1 (60000 views)",
+        "D animals video 2 (60000 views)",
     ]
     assert [s["id"] for s in packet["production_steps"]] == [s.id for s in STEPS]
 

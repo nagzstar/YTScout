@@ -116,6 +116,24 @@ niche_validation:
   videos_per_channel: 30
   # search.list relevanceLanguage (free): the scout looks for English-language niches.
   language: en
+  # Relevance gate (049). A search hit does not put a channel in the niche: 027's samples
+  # were led by BBC News, NBC News and Kurzgesagt. `score --niches` screens each sampled
+  # channel on the titles and categories of its newest videos_per_channel videos; a channel
+  # that fails stays in niche_channels with a reason and the scorer ignores it. The script
+  # check reuses discovery.latin_share_min, and the English check runs when
+  # discovery.language is en. A channel with no stored videos is kept (no evidence).
+  relevance:
+    # News outlets: at least this share of the videos in these YouTube categories
+    # (25 = News & Politics) ...
+    news_category_ids: ["25"]
+    news_share_min: 0.5
+    # Not English: at least this share of the titles carry a non-English function word
+    # (le, der, que, ...) and they outnumber the titles with an English one.
+    foreign_title_share_min: 0.2
+    # Off-topic: fewer than this share of the titles contain a word of the niche's queries
+    # or label. 0 shared words always fails; 0.1 also drops the mega-channel with one
+    # on-topic video in 30 (Kurzgesagt, Cleo Abram in 027).
+    topical_title_share_min: 0.1
 
 # Niche scoring (023, DESIGN.md §6). The pure functions in src/ytscout/scoring/
 # {opportunity,money,effort,final}.py read every number from this section and nothing

@@ -80,6 +80,7 @@ from ytscout.scoring import (
     load_scoring,
     metrics_config,
     niche_scoring_config,
+    relevance_config,
     shorts_max_seconds,
     summaries_per_channel,
     validation_config,
@@ -1288,7 +1289,8 @@ def _score_niches(
         rpm = scout_propose.load_rpm_tiers(root / scout_propose.RPM_TIERS_RELPATH)
         steps = load_steps(root / STEPS_RELPATH)
         coverage = load_coverage(root / COVERAGE_RELPATH)
-    except (scout_propose.ScoutConfigError, AuditError) as exc:
+        relevance = relevance_config(load_scoring(root / SCORING_RELPATH))
+    except (scout_propose.ScoutConfigError, AuditError, ScoringConfigError) as exc:
         print(f"score: {exc}", file=sys.stderr)
         return EXIT_ERROR
     with recorded_run(conn, "score_niches"):
@@ -1301,6 +1303,7 @@ def _score_niches(
             usd_gbp=settings.usd_gbp if settings else DEFAULT_USD_GBP,
             now=utc_now(),
             niche_ids=niche_ids,
+            relevance=relevance,
         )
     skipped = (
         f"; {result.skipped_untagged} untagged niche(s) skipped (run `scout tag`)"

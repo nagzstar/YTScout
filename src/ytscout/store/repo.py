@@ -1009,6 +1009,58 @@ def niche_channels(conn: sqlite3.Connection, niche_id: int) -> list[sqlite3.Row]
     ).fetchall()
 
 
+def sampled_niche_ids(conn: sqlite3.Connection) -> list[int]:
+    """Every niche with at least one linked channel, whatever its status."""
+    rows = conn.execute("SELECT DISTINCT niche_id FROM niche_channels ORDER BY niche_id")
+    return [row[0] for row in rows]
+
+
+def niche_channel_recent_videos(
+    conn: sqlite3.Connection, niche_id: int, per_channel: int
+) -> dict[str, list[sqlite3.Row]]:
+    """``{channel_id: newest per_channel videos (title, category_id)}`` for every channel
+    linked to the niche; a channel with no stored videos maps to ``[]``."""
+    out: dict[str, list[sqlite3.Row]] = {
+        row["channel_id"]: [] for row in niche_channels(conn, niche_id)
+    }
+    rows = conn.execute(
+        """
+        SELECT channel_id, title, category_id FROM (
+            SELECT v.channel_id, v.title, v.category_id,
+                   ROW_NUMBER() OVER (PARTITION BY v.channel_id
+                                      ORDER BY v.published_at DESC, v.id) AS n
+            FROM videos v JOIN niche_channels nc ON nc.channel_id = v.channel_id
+            WHERE nc.niche_id = ?
+        ) WHERE n <= ? ORDER BY channel_id, n
+        """,
+        (niche_id, per_channel),
+    )
+    for row in rows:
+        out[row["channel_id"]].append(row)
+    return out
+
+
+def set_niche_channel_exclusion(
+    conn: sqlite3.Connection, niche_id: int, channel_id: str, reason: str | None
+) -> None:
+    """Record why the relevance gate left a channel out of the niche (``None``: counted)."""
+    conn.execute(
+        "UPDATE niche_channels SET excluded_reason = ? WHERE niche_id = ? AND channel_id = ?",
+        (reason, niche_id, channel_id),
+    )
+
+
+def excluded_niche_channels(conn: sqlite3.Connection, niche_id: int) -> list[sqlite3.Row]:
+    """The niche's excluded channels: ``channel_id``, ``title``, ``excluded_reason``."""
+    return conn.execute(
+        "SELECT nc.channel_id, c.title, nc.excluded_reason FROM niche_channels nc"
+        " LEFT JOIN channels c ON c.id = nc.channel_id"
+        " WHERE nc.niche_id = ? AND nc.excluded_reason IS NOT NULL"
+        " ORDER BY c.title COLLATE NOCASE, nc.channel_id",
+        (niche_id,),
+    ).fetchall()
+
+
 def mark_niche_validated(
     conn: sqlite3.Connection, niche_id: int, validated_at: str | datetime | None = None
 ) -> None:

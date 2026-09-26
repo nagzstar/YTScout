@@ -66,6 +66,18 @@
                 {% endif %}
               </div>
               <div>
+                <h4>Excluded from the sample ({{ n.sample.excluded | length }})</h4>
+                {% if n.sample.excluded %}
+                <details class="excluded"><summary>{{ n.sample.excluded | length }} channel(s) not counted: news, not English or off-topic</summary>
+                <ul class="reasons">
+                  {% for c in n.sample.excluded %}
+                  <li><a href="{{ channel_url }}{{ c.id | urlencode }}">{{ c.title }}</a> <span class="muted">{{ c.reason }}</span></li>
+                  {% endfor %}
+                </ul>
+                </details>
+                {% else %}<p class="empty">None: every sampled channel counts.</p>{% endif %}
+              </div>
+              <div>
                 <h4>Queries</h4>
                 {% if n.sample.queries %}<ul class="reasons">{% for q in n.sample.queries %}<li>{{ q }}</li>{% endfor %}</ul>{% else %}<p class="empty">None stored.</p>{% endif %}
                 <h4>Required steps</h4>

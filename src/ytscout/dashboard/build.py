@@ -384,8 +384,9 @@ def trend(history: list[dict[str, Any]]) -> str:
 def _niche_sample(
     conn: sqlite3.Connection, niche: dict[str, Any], scored_at: str, context: NicheContext
 ) -> dict[str, Any]:
-    """The expanded row: small channels and their outliers (as of the score), the queries,
-    the required steps and what the pipeline covers of each."""
+    """The expanded row: small channels and their outliers (as of the score), the channels
+    the relevance gate excluded, the queries, the required steps and what the pipeline
+    covers of each."""
     coverage = context.coverage
     sample: dict[str, Any] = {
         "queries": _json_list(niche["queries_json"]),
@@ -400,6 +401,15 @@ def _niche_sample(
         ],
         "coverage_known": coverage is not None,
         "channels": None,
+        # What the relevance gate (049) left out of the sample, and why.
+        "excluded": [
+            {
+                "id": r["channel_id"],
+                "title": r["title"] or r["channel_id"],
+                "reason": r["excluded_reason"],
+            }
+            for r in repo.excluded_niche_channels(conn, niche["id"])
+        ],
     }
     if context.cfg is None:
         return sample

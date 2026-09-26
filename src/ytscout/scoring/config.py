@@ -129,6 +129,54 @@ def validation_config(config: dict[str, Any]) -> ValidationConfig:
     return ValidationConfig(**values)
 
 
+@dataclass(frozen=True)
+class RelevanceConfig:
+    """``niche_validation.relevance:`` (049) plus what it reuses: ``videos_per_channel``
+    and ``discovery``'s ``language`` / ``latin_share_min``."""
+
+    news_category_ids: tuple[str, ...]
+    news_share_min: float
+    foreign_title_share_min: float
+    topical_title_share_min: float
+    titles_per_channel: int
+    language: str
+    latin_share_min: float
+
+
+def _share(where: str, value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0 <= value <= 1:
+        raise ScoringConfigError(f"{where} must be a number from 0 to 1, got {value!r}")
+    return float(value)
+
+
+def relevance_config(config: dict[str, Any]) -> RelevanceConfig:
+    """The niche relevance gate's thresholds. Every key required."""
+    section = (config.get("niche_validation") or {}).get("relevance")
+    if not isinstance(section, dict):
+        raise ScoringConfigError("scoring.yaml has no `niche_validation.relevance:` mapping")
+    ids = section.get("news_category_ids")
+    if not isinstance(ids, list) or not all(isinstance(i, str | int) for i in ids):
+        raise ScoringConfigError(
+            f"niche_validation.relevance.news_category_ids must be a list, got {ids!r}"
+        )
+    where = "niche_validation.relevance."
+    validation = validation_config(config)
+    discovery = discovery_config(config)
+    return RelevanceConfig(
+        news_category_ids=tuple(str(i) for i in ids),
+        news_share_min=_share(where + "news_share_min", section.get("news_share_min")),
+        foreign_title_share_min=_share(
+            where + "foreign_title_share_min", section.get("foreign_title_share_min")
+        ),
+        topical_title_share_min=_share(
+            where + "topical_title_share_min", section.get("topical_title_share_min")
+        ),
+        titles_per_channel=validation.videos_per_channel,
+        language=discovery.language,
+        latin_share_min=discovery.latin_share_min,
+    )
+
+
 def metrics_config(config: dict[str, Any]) -> MetricsConfig:
     """The ``competitor_metrics:`` section: outlier rule and length buckets."""
     section = config.get("competitor_metrics")

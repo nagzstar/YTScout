@@ -134,7 +134,8 @@ Nagz can add seeds by hand in `config/seed_niches.yaml`.
 2. Collect the distinct channels (target: 30–80).
 3. `channels.list` on all (1 unit each). Classify **small** = `subs < 10,000 AND channel age < 12 months`.
 4. For each channel, `playlistItems.list` on the uploads playlist (1 unit/page, 50 per page) → last 30 video IDs, then `videos.list` in batches of 50 (1 unit/batch) → stats, duration (Shorts ≤ 60s… treat ≤ 3 min as Shorts-eligible per current YouTube rules, but classify by the channel's own format mix), publish date.
-5. Compute the metrics in §6.
+5. **Relevance gate (049).** A search hit does not make a channel part of the niche. `score --niches` screens every linked channel on its newest stored video titles and categories: news outlets (≥ 50% News & Politics), non-English channels (discovery's Latin-script share, plus a function-word check) and channels whose titles rarely share a word with the niche's queries or label (< 10%) get `niche_channels.excluded_reason` and are left out of §6. Thresholds: `niche_validation.relevance` in `config/scoring.yaml`.
+6. Compute the metrics in §6 over the channels that pass.
 
 Typical cost: **~0.9–1.2k units per niche**. As built (022): one uploads page and one `videos.list` per channel, 80 channels at most, so a niche costs at most 600 + 2 + 160 = **762 units**, and a niche is only started when that much is left under both caps. A discovery week validating 6–8 new niches plus refreshing existing ones fits in 10k/day. See §8 for the budget.
 
@@ -395,7 +396,7 @@ Core tables; columns abbreviated. All timestamps UTC.
 - **transcripts** — `video_id, language, text, source, status, fetched_at`
 - **own_analytics** — `video_id, window_start, window_end, views, est_revenue_usd, rpm_usd, monetized_playbacks, avg_view_duration_s, avg_view_pct, impressions, ctr, sub_delta, traffic_json`
 - **niches** — `id, format, topic, topic_category, label, status, source ('llm'|'snowball'|'seed'), created_at, queries_json, required_steps_json, meta_json, validated_at, needs_specific_footage, tag_prompt_hash, tag_schema_hash, tag_notes, tagged_at`
-- **niche_channels** — `niche_id, channel_id, is_small, added_at`
+- **niche_channels** — `niche_id, channel_id, is_small, added_at`, `excluded_reason` (049: NULL = counted)
 - **niche_scores** — `niche_id, scored_at, opportunity, small_outlier_rate, newcomer_view_share, concentration, newcomer_monthly_views_p25/p50/p75, rpm_gbp, est_monthly_gbp, manual_hours_per_month, score, confidence_flags_json`
 - **competitor_analyses** — `id, run_at, prompt_hash, schema_version, packet_path, result_json, status`
 - **video_summaries** — `video_id, prompt_hash, summary_json, created_at`
