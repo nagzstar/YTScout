@@ -52,9 +52,11 @@ from ytscout.scoring.final import score
 from ytscout.scoring.money import calibration, est_monthly_gbp, rpm_gbp, rpm_usd
 from ytscout.scoring.opportunity import (
     LOW_CONFIDENCE,
+    active_small_channels,
     channel_median,
     concentration,
     is_small,
+    newcomer_anchor_views,
     newcomer_monthly_views,
     newcomer_view_share,
     opportunity,
@@ -87,6 +89,8 @@ CFG: dict = {
     "top_n_concentration": 3,
     "videos_per_month": {"shorts": 20, "longform": 4},
     "manual_hours_floor_per_month": 2,
+    "newcomer_views_percentile": 75,
+    "newcomer_min_window_videos": 1,
 }
 
 
@@ -247,8 +251,10 @@ def test_money() -> None:
     assert sig3(rpm_usd("animals_nature", "shorts", TABLE, cal)) == 0.1
     gbp = rpm_gbp("animals_nature", "shorts", TABLE, cal, usd_gbp=0.78)
     assert sig3(gbp) == 0.078
-    _, p50, _ = newcomer_monthly_views(SAMPLE, CFG)
-    assert sig3(est_monthly_gbp(p50, gbp)) == 1.04
+    # The anchor is p75 of A, B, C's monthly views (051): 26,667 → £2.08.
+    anchor = newcomer_anchor_views(SAMPLE, CFG)
+    assert anchor is not None and sig3(anchor) == 26_700
+    assert sig3(est_monthly_gbp(anchor, gbp)) == 2.08
 
 
 # ---------------------------------------------------------------- §6.4
@@ -267,11 +273,12 @@ def test_effort() -> None:
 def test_final_score_end_to_end() -> None:
     cal = calibration(0.10, TABLE)
     gbp = rpm_gbp("animals_nature", "shorts", TABLE, cal, usd_gbp=0.78)
-    _, p50, _ = newcomer_monthly_views(SAMPLE, CFG)
-    money = est_monthly_gbp(p50, gbp)
+    anchor = newcomer_anchor_views(SAMPLE, CFG)
+    assert anchor is not None
+    money = est_monthly_gbp(anchor, gbp)
     per_video, _ = manual_hours_per_video(REQUIRED, STEPS, COVERAGE, "shorts")
     hours = manual_hours_per_month(per_video, CFG["videos_per_month"]["shorts"])
-    assert sig3(score(money, hours, CFG["manual_hours_floor_per_month"])) == 0.0578
+    assert sig3(score(money, hours, CFG["manual_hours_floor_per_month"])) == 0.116
 
 
 # ---------------------------------------------------------------- extra cases the issue asks for
@@ -460,6 +467,8 @@ def test_yaml_matches_worked_example_config() -> None:
             "sum to 1",
         ),
         ({"niche_scoring": {**CFG, "outlier_floor_views": {"shorts": 1}}}, "outlier_floor_views"),
+        ({"niche_scoring": {**CFG, "newcomer_views_percentile": 101}}, "newcomer_views_percentile"),
+        ({"niche_scoring": {**CFG, "newcomer_min_window_videos": -1}}, "newcomer_min_window"),
     ],
 )
 def test_niche_scoring_config_rejects(patch: dict, message: str) -> None:
@@ -472,3 +481,35 @@ def test_scoring_package_never_touches_the_db() -> None:
     for path in (REPO_ROOT / "src" / "ytscout" / "scoring").glob("*.py"):
         text = path.read_text(encoding="utf-8")
         assert "sqlite" not in text and "conn" not in text, path
+
+
+# ---------------------------------------------------------------- §6.2 anchor (051)
+
+
+def test_inactive_small_channel_is_left_out_of_newcomer_views() -> None:
+    # G is small but its only Short is 120 days old: nothing in the window.
+    quiet = VideoSample(views=50, published_at=NOW - timedelta(days=120), duration_s=45)
+    g = ChannelSample("G", 100, datetime(2026, 3, 1, tzinfo=UTC), [quiet])
+    sample = NicheSample([A, B, C, g], "shorts", NOW)
+    assert [c.channel_id for c in small_channels(sample, CFG)] == ["A", "B", "C", "G"]
+    assert [c.channel_id for c in active_small_channels(sample, CFG)] == ["A", "B", "C"]
+    # Same numbers as SAMPLE: G's zero does not drag the quartiles down.
+    assert newcomer_monthly_views(sample, CFG) == newcomer_monthly_views(SAMPLE, CFG)
+    # With the rule off (0 videos needed) G counts: [0, 1,667, 13,333, 40,000].
+    off = {**CFG, "newcomer_min_window_videos": 0}
+    _, p50, p75 = newcomer_monthly_views(sample, off)
+    assert sig3(p50) == 7_500 and sig3(p75) == 20_000
+
+
+def test_anchor_follows_the_configured_percentile() -> None:
+    assert sig3(newcomer_anchor_views(SAMPLE, {**CFG, "newcomer_views_percentile": 50})) == 13_300
+    assert sig3(newcomer_anchor_views(SAMPLE, {**CFG, "newcomer_views_percentile": 100})) == 40_000
+    assert newcomer_anchor_views(NicheSample([D], "shorts", NOW), CFG) is None
+
+
+def test_no_active_small_channel_gives_no_views() -> None:
+    quiet = VideoSample(views=50, published_at=NOW - timedelta(days=120), duration_s=45)
+    g = ChannelSample("G", 100, datetime(2026, 3, 1, tzinfo=UTC), [quiet])
+    sample = NicheSample([g, D], "shorts", NOW)
+    assert newcomer_monthly_views(sample, CFG) is None
+    assert newcomer_anchor_views(sample, CFG) is None

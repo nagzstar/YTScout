@@ -29,6 +29,8 @@ CALIBRATION_DAYS = 90
 CALIBRATION_MIN_VIEWS = 1000
 LONGFORM_UNCALIBRATED = "longform_uncalibrated"
 NO_SMALL_CHANNELS = "no_small_channels"
+# Small channels exist but none published inside the window (051): no newcomer views.
+NO_ACTIVE_SMALL_CHANNELS = "no_active_small_channels"
 
 
 def _dt(value: str | None) -> datetime | None:
@@ -155,8 +157,10 @@ def score_niche(
     opp, flags = opportunity.opportunity(sample, cfg)
     flags = list(flags)
     views = opportunity.newcomer_monthly_views(sample, cfg)
-    if views is None:
+    if not opportunity.small_channels(sample, cfg):
         flags.append(NO_SMALL_CHANNELS)
+    elif views is None:
+        flags.append(NO_ACTIVE_SMALL_CHANNELS)
     p25, p50, p75 = views if views is not None else (None, None, None)
 
     if fmt == "longform":
@@ -168,7 +172,8 @@ def score_niche(
     else:
         cal = calibration
     rpm_gbp = money.rpm_gbp(niche["topic_category"], fmt, rpm, cal, usd_gbp)
-    est = money.est_monthly_gbp(p50 or 0.0, rpm_gbp)
+    anchor = opportunity.newcomer_anchor_views(sample, cfg)
+    est = money.est_monthly_gbp(anchor or 0.0, rpm_gbp)
 
     per_video, effort_flags = effort.manual_hours_per_video(
         _required_steps(niche),

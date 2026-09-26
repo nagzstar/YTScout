@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from typing import Any
 
+from ytscout.scoring.metrics import percentile
 from ytscout.scoring.types import ChannelSample, NicheSample, VideoSample
 
 LOW_CONFIDENCE = "low_confidence"
@@ -177,18 +178,39 @@ def opportunity(sample: NicheSample, cfg: Mapping[str, Any]) -> tuple[float, lis
     return score, flags
 
 
+def active_small_channels(sample: NicheSample, cfg: Mapping[str, Any]) -> list[ChannelSample]:
+    """§6.2 (051): the small channels that published at least ``newcomer_min_window_videos``
+    in-format videos inside the window. A small channel that has gone quiet is not what a
+    newcomer publishing on schedule would look like, so it stays out of the views set.
+    """
+    need = _num(cfg, "newcomer_min_window_videos")
+    return [c for c in small_channels(sample, cfg) if len(window_videos(c, sample, cfg)) >= need]
+
+
+def _active_monthly_views(sample: NicheSample, cfg: Mapping[str, Any]) -> list[float]:
+    months = _num(cfg, "window_days") / _DAYS_PER_MONTH
+    return [window_views(c, sample, cfg) / months for c in active_small_channels(sample, cfg)]
+
+
 def newcomer_monthly_views(
     sample: NicheSample, cfg: Mapping[str, Any]
 ) -> tuple[float, float, float] | None:
-    """§6.2: (p25, p50, p75) of the small channels' monthly views, where monthly views are
-    window views scaled to 30 days. Inclusive (linearly interpolated) quantiles; ``None``
-    when the niche has no small channel.
+    """§6.2: (p25, p50, p75) of the active small channels' monthly views, where monthly
+    views are window views scaled to 30 days. Linearly interpolated quantiles; ``None``
+    when the niche has no active small channel. The band the dashboard shows.
     """
-    months = _num(cfg, "window_days") / _DAYS_PER_MONTH
-    monthly = [window_views(c, sample, cfg) / months for c in small_channels(sample, cfg)]
+    monthly = _active_monthly_views(sample, cfg)
     if not monthly:
         return None
-    if len(monthly) == 1:
-        return monthly[0], monthly[0], monthly[0]
-    p25, p50, p75 = statistics.quantiles(monthly, n=4, method="inclusive")
+    p25, p50, p75 = (percentile(monthly, q) for q in (0.25, 0.5, 0.75))
+    assert p25 is not None and p50 is not None and p75 is not None
     return p25, p50, p75
+
+
+def newcomer_anchor_views(sample: NicheSample, cfg: Mapping[str, Any]) -> float | None:
+    """§6.2 (051): the monthly views the £ estimate anchors on, "a good newcomer": the
+    ``newcomer_views_percentile``-th percentile of the same active set. ``None`` when the
+    niche has no active small channel.
+    """
+    q = _num(cfg, "newcomer_views_percentile") / 100.0
+    return percentile(_active_monthly_views(sample, cfg), q)

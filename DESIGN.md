@@ -167,15 +167,16 @@ If `|small_channels| < 5`, opportunity is flagged **low-confidence** and capped 
 
 ### 6.2 Expected views for a newcomer
 ```
-newcomer_monthly_views = median(monthly views of small channels in niche, last 90d)
+active_small            = small channels with ≥ newcomer_min_window_videos (1) in-format videos in the last 90d
+newcomer_monthly_views = p{newcomer_views_percentile} (75) of monthly views of active_small, last 90d
 ```
-Report p25 and p75 alongside. This is deliberately conservative: it estimates what a typical *small* channel gets, not the niche's best case.
+Report p25 and p75 of the same active set alongside as the band. Changed by 051: the median of every small channel put the median small Shorts channel at ~2,000 views a month, so every Shorts niche rounded to £0 and the ranking came down to the long-form RPM tier. The estimate is now "a good newcomer" (p75), not the typical one, and a small channel that published nothing in the window no longer drags the set down. Both numbers are named thresholds under `niche_scoring` in `config/scoring.yaml`. A niche whose small channels are all inactive carries `no_active_small_channels` and £0.
 
 ### 6.3 Money (£/month)
 ```
 rpm_gbp                 = rpm_table[niche.topic_category][format] × calibration
 calibration             = own_actual_rpm / rpm_table["animals"]["shorts"]     (from Analytics API)
-est_monthly_gbp         = newcomer_monthly_views / 1000 × rpm_gbp
+est_monthly_gbp         = newcomer_monthly_views / 1000 × rpm_gbp     (the p75 anchor, §6.2)
 ```
 - `config/rpm_tiers.yaml` holds the table. Seed it with public creator-reported ranges (finance/business high, tech/education mid, entertainment/animals low; Shorts a small fraction of long-form). Every row carries a `source` and `last_reviewed` field. Values are in USD and converted with a fixed `usd_gbp` rate in config.
 - Calibration is recomputed each run from the own channel's actual RPM. If the Analytics API isn't connected, calibration = 1.0 and the dashboard shows an "uncalibrated" badge.

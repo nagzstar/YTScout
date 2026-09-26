@@ -247,6 +247,8 @@ _NICHE_SCORING_NUMBERS: dict[str, tuple[str, float]] = {
     "low_confidence_min_small": ("int", 0),
     "low_confidence_cap": ("number", 0),
     "manual_hours_floor_per_month": ("number", 0),
+    "newcomer_views_percentile": ("number", 0),
+    "newcomer_min_window_videos": ("int", 0),
 }
 _NICHE_SCORING_PER_FORMAT: tuple[str, ...] = ("outlier_floor_views", "videos_per_month")
 _NICHE_SCORING_WEIGHTS: tuple[str, ...] = (
@@ -282,6 +284,8 @@ def niche_scoring_config(config: dict[str, Any]) -> dict[str, Any]:
         )
     if cfg["low_confidence_cap"] > 1:
         raise ScoringConfigError("niche_scoring.low_confidence_cap must be ≤ 1")
+    if cfg["newcomer_views_percentile"] > 100:
+        raise ScoringConfigError("niche_scoring.newcomer_views_percentile must be ≤ 100")
     for key in _NICHE_SCORING_PER_FORMAT:
         raw = section.get(key)
         if not isinstance(raw, dict) or set(raw) != {"shorts", "longform"}:

@@ -84,6 +84,9 @@ class Dashboard:
     # Niches with no niche_scores row yet (proposed, validated): the "waiting" table.
     niches_waiting: list[dict[str, Any]] = field(default_factory=list)
     niche_counts: dict[str, int] = field(default_factory=dict)
+    # The percentile of newcomer monthly views the £ estimate anchors on (051), from
+    # `niche_scoring.newcomer_views_percentile`; None when scoring.yaml did not load.
+    niche_views_percentile: float | None = None
     # The Runs section (031): recent rows, this week's totals, units by day, pending
     # analyses, the health banner's reasons and the latest weekly log path.
     runs: dict[str, Any] = field(default_factory=dict)
@@ -436,7 +439,7 @@ def _niche_sample(
 
 
 def _gbp_band(latest: dict[str, Any], views: float | None) -> float | None:
-    """A views quantile in £/month: est = p50 views / 1000 × rpm_gbp, so £ scales with views."""
+    """A views quantile in £/month: est = views / 1000 × rpm_gbp, so £ scales with views."""
     if views is None or latest["rpm_gbp"] is None:
         return None
     return views / 1000.0 * latest["rpm_gbp"]
@@ -448,6 +451,8 @@ def _load_niches(conn: sqlite3.Connection, dash: Dashboard, context: NicheContex
     niches = _rows(conn, "SELECT * FROM niches ORDER BY id")
     if not niches:
         return
+    if context.cfg is not None:
+        dash.niche_views_percentile = context.cfg["newcomer_views_percentile"]
     history: dict[int, list[dict[str, Any]]] = {}
     for row in _rows(conn, "SELECT * FROM niche_scores ORDER BY scored_at, id"):
         history.setdefault(row["niche_id"], []).append(row)
@@ -467,7 +472,7 @@ def _load_niches(conn: sqlite3.Connection, dash: Dashboard, context: NicheContex
                 "scored_at": latest["scored_at"],
                 "score": latest["score"],
                 "opportunity": latest["opportunity"],
-                "est_p50": latest["est_monthly_gbp"],
+                "est": latest["est_monthly_gbp"],
                 "est_p25": _gbp_band(latest, latest["newcomer_monthly_views_p25"]),
                 "est_p75": _gbp_band(latest, latest["newcomer_monthly_views_p75"]),
                 "hours": latest["manual_hours_per_month"],

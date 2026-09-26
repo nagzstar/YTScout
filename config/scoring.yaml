@@ -176,3 +176,11 @@ niche_scoring:
   # score = est GBP/month / max(manual hours/month, this floor). Stops a fully automated
   # niche scoring infinity.
   manual_hours_floor_per_month: 2
+  # The newcomer monthly views the GBP/month estimate anchors on (DESIGN.md 6.2, 051): this
+  # percentile of the monthly views of the "active" small channels, those that published at
+  # least newcomer_min_window_videos in-format videos inside window_days. 75 = a good
+  # newcomer, not the typical one: the median small Shorts channel gets ~2,000 views a
+  # month, which rounds every Shorts niche to GBP 0. p25 and p75 of the same active set are
+  # still reported as the band.
+  newcomer_views_percentile: 75
+  newcomer_min_window_videos: 1

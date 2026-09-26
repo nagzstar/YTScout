@@ -331,7 +331,7 @@ def test_niches_load_ranked_per_format(niche_db: tuple[Path, dict[str, int]]) ->
     assert [n["id"] for n in shorts] == [ids["example"], ids["cars"]]
     assert [n["id"] for n in longform] == [ids["deep"]]
     top = shorts[0]
-    assert round(top["score"], 4) == 0.0578  # the latest row, not the older 0.04
+    assert round(top["score"], 4) == 0.1156  # the latest row, not the older 0.04
     assert top["trend"] == "▲"  # 0.387 against 0.30, 30 days older
     assert round(top["est_p25"], 3) == 0.585 and round(top["est_p75"], 2) == 2.08
     assert longform[0]["trend"] == "—"
@@ -368,8 +368,9 @@ def test_niches_render(niche_db: tuple[Path, dict[str, int]], tmp_path: Path) ->
     # Shorts is the default; long-form starts hidden.
     assert 'data-niche-format-panel="shorts">' in html
     assert 'data-niche-format-panel="longform" hidden>' in html
-    assert "<strong>0.058</strong>" in html and 'title="0.0577778"' in html
-    assert "£1.0 (£0.59–£2.1)" in html
+    assert "<strong>0.12</strong>" in html and 'title="0.115556"' in html
+    assert "Est £/month p75 (band p25–p75)" in html
+    assert "£2.1 (£0.59–£2.1)" in html
     for flag in ("low_confidence", "disqualified"):
         assert f'<span class="badge badge-{flag}">{flag}</span>' in html
     # 050: the bare word sent readers hunting for a bug; the badge says why.

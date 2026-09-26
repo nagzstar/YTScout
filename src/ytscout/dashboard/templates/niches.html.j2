@@ -21,7 +21,7 @@
     <table class="niches">
       <thead><tr>
         <th>Niche</th><th>Category</th><th class="num">Score (£/manual h)</th><th class="num">Opportunity</th>
-        <th class="num">Est £/month p50 (p25–p75)</th><th class="num">Manual h/month</th><th>Flags</th><th>Trend</th><th>Status</th><th>Decide</th>
+        <th class="num" title="Estimate: a newcomer at this percentile of the monthly views of small channels that published in the window. Band: p25–p75 of the same channels.">Est £/month {% if d.niche_views_percentile is not none %}p{{ "%g" | format(d.niche_views_percentile) }}{% else %}(anchor){% endif %} (band p25–p75)</th><th class="num">Manual h/month</th><th>Flags</th><th>Trend</th><th>Status</th><th>Decide</th>
       </tr></thead>
       <tbody>
       {% for n in rows %}
@@ -30,7 +30,7 @@
           <td>{{ n.category or "–" }}</td>
           <td class="num" title="{{ n.score | full }}"><strong>{{ n.score | sig2 }}</strong></td>
           <td class="num" title="{{ n.opportunity | full }}">{{ n.opportunity | sig2 }}</td>
-          <td class="num" title="{{ n.est_p50 | full }} ({{ n.est_p25 | full }}–{{ n.est_p75 | full }})">£{{ n.est_p50 | sig2 }} (£{{ n.est_p25 | sig2 }}–£{{ n.est_p75 | sig2 }})</td>
+          <td class="num" title="{{ n.est | full }} ({{ n.est_p25 | full }}–{{ n.est_p75 | full }})">£{{ n.est | sig2 }} (£{{ n.est_p25 | sig2 }}–£{{ n.est_p75 | sig2 }})</td>
           <td class="num" title="{{ n.hours | full }}">{{ n.hours | sig2 if n.hours is not none else "∞" }}</td>
           <td>{% for f in n.flags %}<span class="badge badge-{{ f }}">{{ f | flag_label }}</span>{% else %}–{% endfor %}</td>
           <td class="trend">{{ n.trend }}</td>

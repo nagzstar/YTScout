@@ -1,6 +1,6 @@
 # Sensitivity check: do the thresholds change the ranking?
 
-Generated 2026-09-26T23:11:25Z by `ytscout scout sensitivity` (issue 028) on 3 niche(s), 27 settings. Re-run it for current numbers. Nothing here is written to the DB and `config/scoring.yaml` is unchanged: changing a default is Nagz's call.
+Generated 2026-09-26T23:51:46Z by `ytscout scout sensitivity` (issue 028) on 3 niche(s), 27 settings. Re-run it for current numbers. Nothing here is written to the DB and `config/scoring.yaml` is unchanged: changing a default is Nagz's call.
 
 The grid is every combination of `outlier_multiplier` ∈ {2, 3, 4}, `small_subs_max` ∈ {5000, 10000, 20000}, `small_age_days` ∈ {180, 365, 540}. The default is `outlier_multiplier=3 small_subs_max=10000 small_age_days=365`.
 
@@ -14,9 +14,9 @@ The grid is every combination of `outlier_multiplier` ∈ {2, 3, 4}, `small_subs
 
 | id | label | format | score min | default | max | opp min | default | max | rank | range | stable |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 3 | One-animal deep dives (8-12 min) | longform | 0.587 | 0.638 | 3.769 | 0.344 | 0.358 | 0.456 | 1 | 1-1 | 27/27 |
-| 33 | Aviation incidents explained: what went wrong an | longform | 0.209 | 0.209 | 0.612 | 0.197 | 0.233 | 0.252 | 2 | 2-2 | 27/27 |
-| 1 | Top 5 countdowns: dangerous animals | shorts | 0.003 | 0.003 | 0.004 | 0.088 | 0.092 | 0.134 | 3 | 3-3 | 27/27 |
+| 3 | One-animal deep dives (8-12 min) | longform | 10.863 | 14.740 | 129.258 | 0.331 | 0.345 | 0.439 | 1 | 1-1 | 27/27 |
+| 33 | Aviation incidents explained: what went wrong an | longform | 3.875 | 10.207 | 10.207 | 0.196 | 0.232 | 0.250 | 2 | 2-2 | 27/27 |
+| 1 | Top 5 countdowns: dangerous animals | shorts | 0.009 | 0.009 | 0.011 | 0.105 | 0.110 | 0.147 | 3 | 3-3 | 27/27 |
 
 ## Reading
 
@@ -25,7 +25,7 @@ The grid is every combination of `outlier_multiplier` ∈ {2, 3, 4}, `small_subs
 - `small_age_days` alone never changes the ranking (2 settings tried).
 - No setting changes the top-3: the default ranking holds in all 27.
 - Every niche keeps its default rank in all 27 settings.
-- Widest score swing: #3 One-animal deep dives (8-12 min) spans 0.587-3.769 (6.4x), lowest at `outlier_multiplier=2 small_subs_max=10000 small_age_days=540`, highest at `outlier_multiplier=2 small_subs_max=20000 small_age_days=180`.
+- Widest score swing: #3 One-animal deep dives (8-12 min) spans 10.863-129.258 (11.9x), lowest at `outlier_multiplier=2 small_subs_max=5000 small_age_days=540`, highest at `outlier_multiplier=2 small_subs_max=20000 small_age_days=180`.
 
 ## Every setting
 
@@ -33,30 +33,30 @@ One row per grid cell; `*` marks the default.
 
 | outlier_multiplier | small_subs_max | small_age_days | #1 rank | #3 rank | #33 rank | #1 score | #3 score | #33 score |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 2 | 5000 | 180 | 3 | 1 | 2 | 0.003 | 2.744 | 0.612 |
-| 2 | 5000 | 365 | 3 | 1 | 2 | 0.003 | 0.798 | 0.209 |
-| 2 | 5000 | 540 | 3 | 1 | 2 | 0.003 | 0.697 | 0.209 |
-| 2 | 10000 | 180 | 3 | 1 | 2 | 0.003 | 2.744 | 0.612 |
-| 2 | 10000 | 365 | 3 | 1 | 2 | 0.003 | 0.638 | 0.209 |
-| 2 | 10000 | 540 | 3 | 1 | 2 | 0.003 | 0.587 | 0.209 |
-| 2 | 20000 | 180 | 3 | 1 | 2 | 0.003 | 3.769 | 0.612 |
-| 2 | 20000 | 365 | 3 | 1 | 2 | 0.003 | 0.824 | 0.209 |
-| 2 | 20000 | 540 | 3 | 1 | 2 | 0.004 | 0.747 | 0.209 |
-| 3 | 5000 | 180 | 3 | 1 | 2 | 0.003 | 2.744 | 0.612 |
-| 3 | 5000 | 365 | 3 | 1 | 2 | 0.003 | 0.798 | 0.209 |
-| 3 | 5000 | 540 | 3 | 1 | 2 | 0.003 | 0.697 | 0.209 |
-| 3 | 10000 | 180 | 3 | 1 | 2 | 0.003 | 2.744 | 0.612 |
-| 3 | 10000 | 365 * | 3 | 1 | 2 | 0.003 | 0.638 | 0.209 |
-| 3 | 10000 | 540 | 3 | 1 | 2 | 0.003 | 0.587 | 0.209 |
-| 3 | 20000 | 180 | 3 | 1 | 2 | 0.003 | 3.769 | 0.612 |
-| 3 | 20000 | 365 | 3 | 1 | 2 | 0.003 | 0.824 | 0.209 |
-| 3 | 20000 | 540 | 3 | 1 | 2 | 0.004 | 0.747 | 0.209 |
-| 4 | 5000 | 180 | 3 | 1 | 2 | 0.003 | 2.744 | 0.612 |
-| 4 | 5000 | 365 | 3 | 1 | 2 | 0.003 | 0.798 | 0.209 |
-| 4 | 5000 | 540 | 3 | 1 | 2 | 0.003 | 0.697 | 0.209 |
-| 4 | 10000 | 180 | 3 | 1 | 2 | 0.003 | 2.744 | 0.612 |
-| 4 | 10000 | 365 | 3 | 1 | 2 | 0.003 | 0.638 | 0.209 |
-| 4 | 10000 | 540 | 3 | 1 | 2 | 0.003 | 0.587 | 0.209 |
-| 4 | 20000 | 180 | 3 | 1 | 2 | 0.003 | 3.769 | 0.612 |
-| 4 | 20000 | 365 | 3 | 1 | 2 | 0.003 | 0.824 | 0.209 |
-| 4 | 20000 | 540 | 3 | 1 | 2 | 0.004 | 0.747 | 0.209 |
+| 2 | 5000 | 180 | 3 | 1 | 2 | 0.009 | 16.399 | 3.875 |
+| 2 | 5000 | 365 | 3 | 1 | 2 | 0.009 | 14.740 | 10.207 |
+| 2 | 5000 | 540 | 3 | 1 | 2 | 0.009 | 10.863 | 10.207 |
+| 2 | 10000 | 180 | 3 | 1 | 2 | 0.009 | 16.399 | 3.875 |
+| 2 | 10000 | 365 | 3 | 1 | 2 | 0.009 | 14.740 | 10.207 |
+| 2 | 10000 | 540 | 3 | 1 | 2 | 0.009 | 10.863 | 10.207 |
+| 2 | 20000 | 180 | 3 | 1 | 2 | 0.010 | 129.258 | 3.875 |
+| 2 | 20000 | 365 | 3 | 1 | 2 | 0.010 | 19.891 | 10.207 |
+| 2 | 20000 | 540 | 3 | 1 | 2 | 0.011 | 15.846 | 10.207 |
+| 3 | 5000 | 180 | 3 | 1 | 2 | 0.009 | 16.399 | 3.875 |
+| 3 | 5000 | 365 | 3 | 1 | 2 | 0.009 | 14.740 | 10.207 |
+| 3 | 5000 | 540 | 3 | 1 | 2 | 0.009 | 10.863 | 10.207 |
+| 3 | 10000 | 180 | 3 | 1 | 2 | 0.009 | 16.399 | 3.875 |
+| 3 | 10000 | 365 * | 3 | 1 | 2 | 0.009 | 14.740 | 10.207 |
+| 3 | 10000 | 540 | 3 | 1 | 2 | 0.009 | 10.863 | 10.207 |
+| 3 | 20000 | 180 | 3 | 1 | 2 | 0.010 | 129.258 | 3.875 |
+| 3 | 20000 | 365 | 3 | 1 | 2 | 0.010 | 19.891 | 10.207 |
+| 3 | 20000 | 540 | 3 | 1 | 2 | 0.011 | 15.846 | 10.207 |
+| 4 | 5000 | 180 | 3 | 1 | 2 | 0.009 | 16.399 | 3.875 |
+| 4 | 5000 | 365 | 3 | 1 | 2 | 0.009 | 14.740 | 10.207 |
+| 4 | 5000 | 540 | 3 | 1 | 2 | 0.009 | 10.863 | 10.207 |
+| 4 | 10000 | 180 | 3 | 1 | 2 | 0.009 | 16.399 | 3.875 |
+| 4 | 10000 | 365 | 3 | 1 | 2 | 0.009 | 14.740 | 10.207 |
+| 4 | 10000 | 540 | 3 | 1 | 2 | 0.009 | 10.863 | 10.207 |
+| 4 | 20000 | 180 | 3 | 1 | 2 | 0.010 | 129.258 | 3.875 |
+| 4 | 20000 | 365 | 3 | 1 | 2 | 0.010 | 19.891 | 10.207 |
+| 4 | 20000 | 540 | 3 | 1 | 2 | 0.011 | 15.846 | 10.207 |

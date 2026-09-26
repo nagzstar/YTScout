@@ -143,9 +143,9 @@ def assert_worked_example(row: sqlite3.Row | dict) -> None:
     assert sig3(row["newcomer_monthly_views_p50"]) == 13_300
     assert sig3(row["newcomer_monthly_views_p75"]) == 26_700
     assert sig3(row["rpm_gbp"]) == 0.078
-    assert sig3(row["est_monthly_gbp"]) == 1.04
+    assert sig3(row["est_monthly_gbp"]) == 2.08  # p75 anchor (051)
     assert sig3(row["manual_hours_per_month"]) == 18.0
-    assert sig3(row["score"]) == 0.0578
+    assert sig3(row["score"]) == 0.116
 
 
 # ---------------------------------------------------------------- build_sample / calibration
@@ -260,8 +260,10 @@ def test_longform_niche_is_flagged_longform_uncalibrated(conn: sqlite3.Connectio
     (row,) = score_rows(conn)
     flags = json.loads(row["confidence_flags_json"])
     assert "longform_uncalibrated" in flags and "uncalibrated" not in flags
-    # The example's videos are all 45 s Shorts: nothing in format, no small-channel views.
-    assert "no_small_channels" not in flags and row["newcomer_monthly_views_p50"] == 0
+    # The example's videos are all 45 s Shorts: nothing in format, so the small channels
+    # published nothing in the window and none is active (051).
+    assert "no_small_channels" not in flags and "no_active_small_channels" in flags
+    assert row["newcomer_monthly_views_p50"] is None
     assert row["est_monthly_gbp"] == 0
 
 
