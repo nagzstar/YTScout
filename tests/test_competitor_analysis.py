@@ -130,7 +130,12 @@ def seed(conn: sqlite3.Connection, *, own_videos: int = 4, comp_videos: int = 3)
 
 
 def canned_analysis(**overrides: object) -> dict:
-    """A full analysis citing packet ids plus one video id that is not in the packet."""
+    """A full analysis citing packet ids plus one video id that is not in the packet.
+
+    Suggestions 1-4 cite ``c3`` and ``d3``, each above its channel median (``seed``: ``c3``
+    700 against 600, ``d3`` 1000 against 900). Suggestion 5 is the weak one (048): it cites
+    only the own channel's ``o4`` plus an id the packet does not have.
+    """
     analysis = {
         "per_competitor": [
             {
@@ -169,7 +174,7 @@ def canned_analysis(**overrides: object) -> dict:
             {
                 "title": f"Top 5 Deadliest Ocean Hunters #{i}",
                 "angle": "five predators ranked by kill rate",
-                "evidence_video_ids": ["c3", "d3"] if i < 5 else [UNKNOWN_VIDEO],
+                "evidence_video_ids": ["c3", "d3"] if i < 5 else ["o4", UNKNOWN_VIDEO],
                 "rationale": "gap plus own above-median pattern",
             }
             for i in range(1, 6)
@@ -390,7 +395,7 @@ def test_ground_analysis_drops_unknown_ids_and_counts_them() -> None:
     assert dropped_videos == [UNKNOWN_VIDEO] and dropped_channels == ["UCghost"]
     assert UNKNOWN_VIDEO not in json.dumps(grounded) and "UCghost" not in json.dumps(grounded)
     assert grounded["per_competitor"][0]["they_do_we_dont"][0]["evidence_video_ids"] == ["c3"]
-    assert grounded["next_videos"][4]["evidence_video_ids"] == []
+    assert grounded["next_videos"][4]["evidence_video_ids"] == ["o4"]
     assert grounded["topic_gaps"][0]["covered_by_channel_ids"] == [COMP, COMP2]
     assert [c["channel_id"] for c in grounded["per_competitor"]] == [COMP, COMP2]
     assert grounded["meta"]["caveats"] == [
@@ -410,6 +415,87 @@ def test_ground_analysis_with_nothing_to_drop_adds_no_caveat() -> None:
     )
     assert (dropped_videos, dropped_channels) == ([], [])
     assert grounded["meta"]["caveats"] == ["No transcripts were available."]
+
+
+STRONG = {"c3", "d3"}  # seed(): the competitor videos above their channel median
+
+
+def test_ground_analysis_flags_a_suggestion_citing_only_own_videos() -> None:
+    # 048: suggestion 5 cites own o4 only; 1-4 cite c3 (700 vs COMP median 600) and d3.
+    known = {"o1", "o2", "o3", "o4", "c1", "c2", "c3", "d1", "d2", "d3"}
+    grounded, _, _ = ground_analysis(canned_analysis(), known, {OWN, COMP, COMP2}, STRONG)
+    assert [v["weak_evidence"] for v in grounded["next_videos"]] == [False] * 4 + [True]
+    assert grounded["topic_gaps"][0]["weak_evidence"] is False
+    assert (
+        "suggestion 5 cites no competitor video above its channel median"
+        in (grounded["meta"]["caveats"])
+    )
+    assert not any(c.startswith("suggestion 1 ") for c in grounded["meta"]["caveats"])
+
+
+def test_ground_analysis_flags_a_topic_gap_below_the_median() -> None:
+    analysis = canned_analysis()
+    analysis["topic_gaps"][0]["evidence_video_ids"] = ["c1", "d1"]  # both below median
+    grounded, _, _ = ground_analysis(
+        analysis, {"c1", "d1", "c3", "d3", "o4"}, {COMP, COMP2}, STRONG
+    )
+    assert grounded["topic_gaps"][0]["weak_evidence"] is True
+    assert (
+        "topic gap 1 cites no competitor video above its channel median"
+        in (grounded["meta"]["caveats"])
+    )
+
+
+def test_ground_analysis_without_strong_ids_adds_no_flag() -> None:
+    grounded, _, _ = ground_analysis(canned_analysis(), {"c3", "d3", "o4"}, {COMP, COMP2})
+    assert all("weak_evidence" not in v for v in grounded["next_videos"])
+
+
+def test_packet_strong_video_ids_are_competitor_hits_only() -> None:
+    packet = {
+        "channels": [
+            {
+                "id": OWN,
+                "role": "own",
+                "views_median": 100,
+                "videos": [{"video_id": "o1", "views": 1403, "settled": True}],
+            },
+            {
+                "id": COMP,
+                "role": "competitor",
+                "views_median": 57_800,
+                "videos": [
+                    {"video_id": "a1", "views": 13_700, "settled": True},
+                    {"video_id": "a2", "views": 3 * 57_800, "settled": True},
+                    {"video_id": "a3", "views": 900_000, "settled": False},
+                    {"video_id": "a4", "views": 57_800, "settled": True},
+                ],
+            },
+            {
+                "id": COMP2,
+                "role": "competitor",
+                "views_median": None,
+                "videos": [{"video_id": "b1", "views": 5, "settled": True}],
+            },
+        ]
+    }
+    assert packets.packet_strong_video_ids(packet) == {"a2"}
+
+
+def test_schema_validates_canned_and_grounded_analyses() -> None:
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    for key in ("next_videos", "topic_gaps"):
+        item = schema["properties"][key]["items"]
+        assert item["properties"]["weak_evidence"] == {
+            **item["properties"]["weak_evidence"],
+            "type": "boolean",
+            "default": False,
+        }
+        assert "weak_evidence" not in item["required"]
+    analysis = canned_analysis()
+    validate(analysis, schema)
+    grounded, _, _ = ground_analysis(analysis, {"c3", "d3", "o4"}, {COMP, COMP2}, STRONG)
+    validate(grounded, schema)
 
 
 # --- analyse_competitors ---------------------------------------------------------------------
@@ -440,12 +526,14 @@ def test_analyse_writes_a_grounded_ok_row(
     assert row["packet_path"] == str(outcome.packet_path)
     stored = json.loads(row["result_json"])
     assert UNKNOWN_VIDEO not in row["result_json"]  # never reaches the DB
-    assert stored["next_videos"][4]["evidence_video_ids"] == []
+    assert stored["next_videos"][4]["evidence_video_ids"] == ["o4"]
     assert len(stored["next_videos"]) == 5
-    assert (
-        stored["meta"]["caveats"][-1]
-        == "1 cited video id(s) were not in the packet and were dropped."
-    )
+    assert [v["weak_evidence"] for v in stored["next_videos"]] == [False] * 4 + [True]
+    assert stored["topic_gaps"][0]["weak_evidence"] is False
+    assert stored["meta"]["caveats"][1:] == [
+        "suggestion 5 cites no competitor video above its channel median",
+        "1 cited video id(s) were not in the packet and were dropped.",
+    ]
     argv = fake_claude.record()["argv"]
     assert argv[1].endswith(str(outcome.packet_path))
     assert argv[argv.index("--json-schema") + 1] == SCHEMA.read_text(encoding="utf-8")
@@ -650,6 +738,32 @@ def test_dashboard_falls_back_to_the_id_and_reads_the_latest_row(
     assert 'href="https://www.youtube.com/watch?v=untitled">untitled</a>' in html
     assert 'href="https://www.youtube.com/watch?v=ghost">ghost</a>' in html
     assert "Run 2026-09-08T10:00:00Z" in html and "<code>p1</code>" in html
+    assert "weak evidence" not in html  # nothing flagged in this row
+
+
+def test_dashboard_tags_a_weak_evidence_suggestion(
+    conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    seed(conn)
+    grounded, _, _ = ground_analysis(canned_analysis(), {"c3", "d3", "o4"}, {COMP, COMP2}, STRONG)
+    with conn:
+        repo.put_competitor_analysis(
+            conn,
+            prompt_hash="p1",
+            schema_hash="s1",
+            packet_path="x.json",
+            result=grounded,
+            status="ok",
+            run_at="2026-09-08T10:00:00Z",
+        )
+    out = tmp_path / "index.html"
+    build(read_copy(tmp_path / "t.sqlite"), out)
+    html = out.read_text(encoding="utf-8")
+    assert html.count('<span class="badge badge-weak_evidence"') == 1
+    suggestions = html.split('<li class="panel next-video">')[1:]
+    assert len(suggestions) == 5
+    assert "weak evidence</span>" in suggestions[4]
+    assert all("weak evidence" not in s for s in suggestions[:4])
 
 
 def test_dashboard_pending_note_shows_the_clock(conn: sqlite3.Connection, tmp_path: Path) -> None:

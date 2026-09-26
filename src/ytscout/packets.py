@@ -241,5 +241,23 @@ def packet_video_ids(packet: dict) -> set[str]:
     return {v["video_id"] for c in packet.get("channels", []) for v in c.get("videos", [])}
 
 
+def packet_strong_video_ids(packet: dict) -> set[str]:
+    """Competitor videos whose views beat their channel's ``views_median`` (048).
+
+    Settled videos only: an unsettled video's views mean nothing yet (046). A channel with
+    no ``views_median`` contributes none.
+    """
+    strong: set[str] = set()
+    for channel in packet.get("channels", []):
+        median = channel.get("views_median")
+        if channel.get("role") == "own" or median is None:
+            continue
+        for video in channel.get("videos", []):
+            views = video.get("views")
+            if video.get("settled", True) and views is not None and views > median:
+                strong.add(video["video_id"])
+    return strong
+
+
 def packet_channel_ids(packet: dict) -> set[str]:
     return {c["id"] for c in packet.get("channels", [])}

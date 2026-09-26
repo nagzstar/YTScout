@@ -138,7 +138,10 @@ def competitor_paths(repo_root: Path) -> tuple[Path, Path]:
 
 
 def ground_analysis(
-    analysis: dict, video_ids: set[str], channel_ids: set[str]
+    analysis: dict,
+    video_ids: set[str],
+    channel_ids: set[str],
+    strong_video_ids: set[str] | None = None,
 ) -> tuple[dict, list[str], list[str]]:
     """A copy of ``analysis`` citing only packet ids, plus what was dropped.
 
@@ -146,6 +149,10 @@ def ground_analysis(
     list under a key ending in ``_channel_ids`` keeps only ids in ``channel_ids``; a
     ``per_competitor`` entry whose ``channel_id`` is unknown goes. Dropped ids are counted
     (not named) in ``meta.caveats`` so the dashboard says something was cut.
+
+    With ``strong_video_ids`` (competitor videos above their channel median, see
+    ``packets.packet_strong_video_ids``), every ``next_videos`` and ``topic_gaps`` entry gets
+    ``weak_evidence``: true when none of its evidence is in that set, with a caveat (048).
     """
     dropped_videos: list[str] = []
     dropped_channels: list[str] = []
@@ -177,6 +184,17 @@ def ground_analysis(
 
     meta = grounded.setdefault("meta", {})
     caveats = list(meta.get("caveats") or [])
+    if strong_video_ids is not None:
+        for key, label in (("next_videos", "suggestion"), ("topic_gaps", "topic gap")):
+            for n, entry in enumerate(grounded.get(key) or [], start=1):
+                if not isinstance(entry, dict):
+                    continue
+                cited = entry.get("evidence_video_ids") or []
+                entry["weak_evidence"] = not any(v in strong_video_ids for v in cited)
+                if entry["weak_evidence"]:
+                    caveats.append(
+                        f"{label} {n} cites no competitor video above its channel median"
+                    )
     unique_videos = sorted(set(dropped_videos))
     unique_channels = sorted(set(dropped_channels))
     # Counts only: the row must never carry an id the packet did not (the CLI logs them).
@@ -271,7 +289,10 @@ def analyse_competitors(
             failure=str(exc),
         )
     grounded, dropped_videos, dropped_channels = ground_analysis(
-        result.structured_output, video_ids, channel_ids
+        result.structured_output,
+        video_ids,
+        channel_ids,
+        packets.packet_strong_video_ids(packet),
     )
     with conn:
         row_id = repo.put_competitor_analysis(

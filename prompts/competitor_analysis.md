@@ -50,6 +50,13 @@ infer its content from its `metrics` alone.
   performance either way**: never list it in `below_median_video_ids` or
   `above_median_video_ids`, and never cite its views for or against a pattern. You may
   still cite it for what it is about (topic, hook, title) when views are not the point.
+- **A suggestion needs a competitor hit.** Every `next_videos` and `topic_gaps` entry must
+  cite at least one settled competitor video whose `views` is above its own channel's
+  `views_median`, and its `rationale` (or `why`) must name which one. Own-channel videos
+  may be cited in addition, never alone: a sequel to our own video is not a
+  competitor-backed gap. A video that merely mentions the topic without beating its
+  channel's median is not evidence that the topic works. Do not set `weak_evidence`; it
+  is filled in after you answer.
 - Views are not comparable across channels of different sizes; compare within a channel,
   or use `views_per_sub` from `metrics`.
 

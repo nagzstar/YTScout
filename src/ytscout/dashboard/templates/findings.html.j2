@@ -34,6 +34,7 @@
     {% for v in a.next_videos %}
     <li class="panel next-video">
       <strong class="next-title">{{ v.title }}</strong>
+      {% if v.get("weak_evidence") %}<span class="badge badge-weak_evidence" title="Cites no competitor video above its channel median">weak evidence</span>{% endif %}
       <p class="angle">{{ v.angle }}</p>
       <p class="muted">{{ v.rationale }}</p>
       {{ evidence(v.evidence_video_ids) }}
@@ -49,7 +50,7 @@
     <tbody>
     {% for g in a.topic_gaps %}
       <tr>
-        <td>{{ g.topic }}</td>
+        <td>{{ g.topic }}{% if g.get("weak_evidence") %} <span class="badge badge-weak_evidence" title="Cites no competitor video above its channel median">weak evidence</span>{% endif %}</td>
         <td>{% for cid in g.covered_by_channel_ids %}{{ f.channel_titles.get(cid) or cid }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
         <td>{{ g.why }}</td>
         <td>{{ evidence(g.evidence_video_ids) }}</td>
