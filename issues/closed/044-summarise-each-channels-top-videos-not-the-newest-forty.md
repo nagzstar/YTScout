@@ -55,3 +55,37 @@ packet takes each channel's newest summarised videos. Two things go wrong in the
 
 `competitor_analyses.id 2` and `data/packets/2026-09-25-competitors-1.json` show the
 skew. `DESIGN.md §6` for the outlier rule.
+
+## Outcome (closed 2026-09-26)
+
+Delivered:
+
+- `repo.summary_plan(conn, prompt_hash, limit, *, per_channel, outlier_multiplier,
+  outlier_window)` returns `SummaryCandidate`s (video, channel, views, `outlier`) in run
+  order; `summary_candidates` is now its id list. Order: own channel's queue first, then
+  competitors round-robin by channel id. Each queue is the channel's eligible outliers
+  (latest views >= `competitor_metrics.outlier_multiplier` x the median of the channel's
+  newest `outlier_window_videos` in the same format, summarised or not; biggest first),
+  then its other eligible videos newest first, cut at `per_channel`. The eligibility rule
+  is unchanged, including redoing titles-only summaries once an `ok` transcript exists.
+- `config/scoring.yaml` gains `video_summaries.per_channel: 8`
+  (`scoring.summaries_per_channel`). `analyse --per-channel N` overrides it; `--limit`
+  stays the run total. `analyse --summaries` now reads `config/scoring.yaml` and exits 1
+  if it is missing or malformed.
+- `summarised_videos_for_channel` (the packet side) orders by views desc (NULL last),
+  then published_at desc.
+- `analyse --summaries --dry-run` prints each candidate as `id channel: views (outlier|
+  newest)` and a `per channel` block with counts and outlier counts. Run against the real
+  DB it showed 7 channels sharing 40 slots (Beast tier 7 with 5 outliers, AstroFact 6 with
+  1, LOWLIGHTS 1 — only one eligible video left there).
+
+Tests: `tests/test_summary_plan.py` — three channels (one posting daily, 60 videos) and a
+12-video run give each channel >= 3 videos led by its biggest; per_channel cap and
+own-first; titles-only redo; packet videos are the highest-view summaries; config
+validation. Existing tests in `test_packets.py` updated for own-first order, and both CLI
+fixtures copy `config/scoring.yaml`.
+
+Not checked: how the next real comparison reads with the new packet (no real `claude -p`
+calls were allowed). Channels with few eligible videos (LOWLIGHTS) are limited by
+transcript attempts, not by this ordering — `collect --transcripts` decides which videos
+are eligible and still goes newest first.
