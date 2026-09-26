@@ -40,3 +40,26 @@ slow step from a hung one.
 
 `issues/closed/038-*.md` for the unbuffered logging; the 018 log
 `logs/weekly-20260925-1354.log` for what the gap looks like.
+
+## Outcome (closed 2026-09-26)
+
+✅ All acceptance criteria met.
+
+Implemented the callback mechanism as specified. `collect_transcripts` now accepts an
+optional `on_result` parameter (`Callable[[str, str, str | None], None]`) that is called
+after each row is committed with the video ID, status, and detail. The CLI passes a
+`print_result` function that writes `  <video_id>: <status> (<detail>)` to stderr
+immediately.
+
+The `counts.failures` list is kept for tests and the end-of-run summary; it is no longer
+used for CLI output. The callback is invoked for every video processed, including ok
+results, so the log now shows live progress even for healthy runs.
+
+Tests added:
+- `test_callback_called_once_per_video_in_order` verifies the callback is called once for
+  each video in order before the function returns.
+- Updated `test_cli_real_run_prints_counts_and_uses_configured_pause` to verify both ok
+  and unavailable results are printed to stderr.
+
+All 547 tests pass. Ruff lint and format checks pass. CLI --help and --dry-run work
+correctly.
