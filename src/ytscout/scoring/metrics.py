@@ -70,6 +70,14 @@ class MetricsConfig:
     outlier_multiplier: float
     outlier_window_videos: int
     length_buckets: tuple[LengthBucket, ...]
+    # Videos younger than this at ``now`` are unsettled (046): counted in uploads, left out
+    # of every views figure and the outlier rule. 0 settles every video.
+    min_age_days: int = 0
+
+
+def is_settled(published_at: datetime, now: datetime, min_age_days: int) -> bool:
+    """A video's views mean something once it is ``min_age_days`` old (046)."""
+    return now - published_at >= timedelta(days=min_age_days)
 
 
 def percentile(values: Sequence[float], q: float) -> float | None:
@@ -165,12 +173,19 @@ def channel_metrics(
     formatted = [v for v in videos if in_format(v, fmt) and v.published_at <= now]
     start = now - timedelta(days=window_days)
     window = [v for v in formatted if v.published_at >= start]
-    views = [v for v in (video.latest_views for video in window) if v is not None]
+    # Unsettled videos (younger than min_age_days) count as uploads but their views are
+    # noise, so every views figure and the outlier rule use settled videos only (046).
+    settled = [v for v in window if is_settled(v.published_at, now, config.min_age_days)]
+    views = [v for v in (video.latest_views for video in settled) if v is not None]
     median = _median(views)
 
-    # The outlier bar is the median of the channel's newest N videos in this format, so a
-    # quiet window does not make every video an outlier.
-    newest = sorted(formatted, key=lambda v: (v.published_at, v.id), reverse=True)
+    # The outlier bar is the median of the channel's newest N settled videos in this
+    # format, so a quiet window does not make every video an outlier.
+    newest = sorted(
+        (v for v in formatted if is_settled(v.published_at, now, config.min_age_days)),
+        key=lambda v: (v.published_at, v.id),
+        reverse=True,
+    )
     recent_views = [
         v
         for v in (video.latest_views for video in newest[: config.outlier_window_videos])
@@ -182,7 +197,7 @@ def channel_metrics(
         bar = config.outlier_multiplier * baseline
         outlier_ids = [
             video.id
-            for video in sorted(window, key=lambda v: (v.published_at, v.id))
+            for video in sorted(settled, key=lambda v: (v.published_at, v.id))
             if video.latest_views is not None and video.latest_views >= bar
         ]
 
@@ -190,6 +205,7 @@ def channel_metrics(
         "window_days": window_days,
         "format": fmt,
         "video_count": len(window),
+        "video_count_settled": len(settled),
         "uploads_per_week": len(window) / (window_days / 7),
         "window_views": sum(views),
         "views_median": median,

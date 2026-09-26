@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ytscout import claude_runner, packets
+from ytscout.scoring import SCORING_RELPATH, load_scoring, metrics_config
 from ytscout.store import repo
 
 PROMPT_RELPATH = Path("prompts") / "video_summary.md"
@@ -244,7 +245,8 @@ def analyse_competitors(
     schema_path = Path(schema_path or default_schema)
     prompt_hash = claude_runner.file_hash(prompt_path)
     schema_hash = claude_runner.file_hash(schema_path)
-    packet = packets.competitor_packet(conn)
+    min_age_days = metrics_config(load_scoring(repo_root / SCORING_RELPATH)).min_age_days
+    packet = packets.competitor_packet(conn, min_age_days=min_age_days)
     packet_path = packets.write_packet(COMPETITOR_PACKET_KIND, packet, packets_dir)
     video_ids = packets.packet_video_ids(packet)
     channel_ids = packets.packet_channel_ids(packet)

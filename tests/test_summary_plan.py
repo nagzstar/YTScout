@@ -130,7 +130,7 @@ def test_packet_videos_are_the_channels_highest_view_summaries(
     rows = repo.summarised_videos_for_channel(conn, DAILY, 3, "shorts")
     assert [r["id"] for r in rows] == ["d00", "d59", "d58"]
     assert [r["views"] for r in rows] == [50_000, 1059, 1058]
-    packet = packets.competitor_packet(conn)
+    packet = packets.competitor_packet(conn, min_age_days=0)
     daily = next(c for c in packet["channels"] if c["id"] == DAILY)
     views = [v["views"] for v in daily["videos"]]
     assert daily["videos"][0]["video_id"] == "d00"

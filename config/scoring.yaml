@@ -79,6 +79,11 @@ competitor_metrics:
   outlier_multiplier: 3
   # ... the median views of the channel's newest this-many videos in the same format.
   outlier_window_videos: 30
+  # A video younger than this many days at scoring time is "unsettled" (046): its views
+  # mean nothing yet, so it is left out of views_median/p25/p75/max, the outlier baseline
+  # and the outlier count. It still counts for uploads_per_week and video_count
+  # (video_count_settled is the other figure). The competitor packet marks it settled: false.
+  min_age_days: 7
   # Length distribution. A video goes into the first bucket whose max_seconds it does not
   # exceed, so a 180 s Short is "60–180s". The last bucket has no top (max_seconds: null).
   length_buckets:

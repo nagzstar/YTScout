@@ -1707,15 +1707,18 @@ def _print_summary_plan(
     print("command: " + " ".join(argv[:1] + [f"{argv[1]} ..."] + argv[3:]))
 
 
-def _print_comparison_plan(conn: sqlite3.Connection, prompt_path: Path, schema_path: Path) -> None:
-    packet = packets.competitor_packet(conn)
+def _print_comparison_plan(
+    conn: sqlite3.Connection, prompt_path: Path, schema_path: Path, min_age_days: int
+) -> None:
+    packet = packets.competitor_packet(conn, min_age_days=min_age_days)
     size = len(json.dumps(packet, ensure_ascii=False).encode("utf-8"))
     print("dry run: the competitor packet that would be compared (nothing is called or written)")
     print(f"format: {packet['format']}")
     for c in packet["channels"]:
+        fresh = sum(1 for v in c["videos"] if not v["settled"])
         print(
             f"  {c['id']} {c['title'] or ''}: {len(c['videos'])} summarised "
-            f"{packet['format']}, role {c['role']}"
+            f"{packet['format']} ({fresh} unsettled), role {c['role']}"
         )
     print(
         f"channels: {len(packet['channels'])}; videos: {len(packets.packet_video_ids(packet))}; "
@@ -1757,6 +1760,13 @@ def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
         except ScoringConfigError as exc:
             print(f"analyse: {exc}", file=sys.stderr)
             return EXIT_ERROR
+    min_age_days = 0
+    if args.competitors:
+        try:
+            min_age_days = metrics_config(load_scoring(root / SCORING_RELPATH)).min_age_days
+        except ScoringConfigError as exc:
+            print(f"analyse: {exc}", file=sys.stderr)
+            return EXIT_ERROR
 
     settings: Settings | None
     try:
@@ -1780,7 +1790,7 @@ def cmd_analyse(args: argparse.Namespace, _extras: list[str]) -> int:
             if args.summaries:
                 _print_summary_plan(copy, *summary_paths(root), summary_opts)
             if args.competitors:
-                _print_comparison_plan(copy, *competitor_paths(root))
+                _print_comparison_plan(copy, *competitor_paths(root), min_age_days)
         finally:
             copy.close()
         return EXIT_OK

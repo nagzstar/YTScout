@@ -92,6 +92,7 @@ Given Nagz's channel, find the channels actually competing for the same audience
 - Title patterns: length, numerals, capitalisation, question marks, "top N" phrasing
 - Outlier count (videos ≥ 3× the channel's own median)
 - Share of niche total views
+- Settling (046): a video younger than `competitor_metrics.min_age_days` (7) is counted in uploads per week and `video_count`, but left out of the median/p25/p75/max, the outlier baseline and the outlier count; `video_count_settled` says how many were used
 
 ### 4.5 Own-channel extras (YouTube Analytics API, OAuth)
 - Views, estimated revenue, RPM, monetised playbacks per video

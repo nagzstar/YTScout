@@ -318,9 +318,10 @@ def test_dashboard_shows_side_by_side_metrics_and_monthly_chart(
     assert rows[0]["own"] and not rows[1]["own"]
     assert '<tr data-channel-id="UCown" class="own">' in html
     assert 'data-window-panel="90d"' in html and 'data-window-panel="365d" hidden' in html
-    # UCcomp 90d Shorts: c1 100, c2 200, c3 3000 → median 200; all 45 s → "30–60s".
+    # UCcomp 90d Shorts: c1 100 (5 days old, unsettled: out of the median, 046), c2 200,
+    # c3 3000 → median 1600; all 45 s → "30–60s".
     comp = rows[1]
-    assert comp["views_median"] == 200 and comp["top_bucket"] == "30–60s"
+    assert comp["views_median"] == 1600 and comp["top_bucket"] == "30–60s"
 
     monthly = dash.monthly
     assert monthly["labels"][-1] == "2026-06" and len(monthly["labels"]) == 12

@@ -6,6 +6,7 @@ fixture; the working is in the comments.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -252,7 +253,49 @@ def test_monthly_views_by_publish_month() -> None:
 
 def test_metrics_config_from_scoring_yaml() -> None:
     cfg = metrics_config(load_scoring(REPO_ROOT / "config" / "scoring.yaml"))
-    assert cfg == CONFIG
+    # CONFIG settles every video so the fixtures above keep their hand-worked numbers.
+    assert cfg == replace(CONFIG, min_age_days=7)
+
+
+# 046: a video younger than min_age_days sits out every views figure but still counts as an
+# upload. Five Shorts, the newest 2 days old with 10 views; min_age_days 7.
+#   id  days  views
+FRESH = [
+    video("f1", 2, 10, 30, True, "Fresh"),  # unsettled
+    video("f2", 10, 100, 30, True, "t"),
+    video("f3", 20, 200, 30, True, "t"),
+    video("f4", 30, 300, 30, True, "t"),
+    video("f5", 40, 400, 30, True, "t"),
+]
+
+
+def test_unsettled_video_sits_out_median_but_counts_as_upload() -> None:
+    cfg = replace(CONFIG, min_age_days=7)
+    m = channel_metrics(FRESH, window_days=90, fmt="shorts", now=NOW, subs=100, config=cfg)
+    # Settled views 100 200 300 400 → median (200 + 300) / 2 = 250. With f1 it would be 200.
+    assert m["views_median"] == 250
+    assert m["views_p25"] == 175  # rank 0.75: 100 + 0.75 × 100
+    assert m["views_max"] == 400
+    assert m["window_views"] == 1000
+    assert m["outlier_baseline"] == 250  # newest 30 settled: the same four
+    assert m["video_count"] == 5 and m["video_count_settled"] == 4
+    assert m["uploads_per_week"] == pytest.approx(5 / (90 / 7))  # f1 counts
+    # Without the rule the fresh video drags the median down.
+    assert (
+        channel_metrics(FRESH, window_days=90, fmt="shorts", now=NOW, subs=100, config=CONFIG)[
+            "views_median"
+        ]
+        == 200
+    )
+
+
+def test_unsettled_video_is_never_an_outlier() -> None:
+    # A 1-day-old video already at 10x the baseline is not called an outlier yet.
+    videos = [*FRESH[1:], video("f0", 1, 5000, 30, True, "Fresh hit")]
+    cfg = replace(CONFIG, min_age_days=7)
+    m = channel_metrics(videos, window_days=90, fmt="shorts", now=NOW, subs=100, config=cfg)
+    assert m["outlier_ids"] == [] and m["outlier_count"] == 0
+    assert m["views_max"] == 400
 
 
 @pytest.mark.parametrize(
@@ -262,6 +305,12 @@ def test_metrics_config_from_scoring_yaml() -> None:
         {"outlier_multiplier": 0, "outlier_window_videos": 30, "length_buckets": []},
         {"outlier_multiplier": 3, "outlier_window_videos": 0, "length_buckets": []},
         {"outlier_multiplier": 3, "outlier_window_videos": 30, "length_buckets": []},
+        {
+            "outlier_multiplier": 3,
+            "outlier_window_videos": 30,
+            "min_age_days": -1,
+            "length_buckets": [{"label": "a", "max_seconds": None}],
+        },
         {
             "outlier_multiplier": 3,
             "outlier_window_videos": 30,

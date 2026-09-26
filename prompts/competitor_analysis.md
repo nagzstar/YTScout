@@ -25,9 +25,10 @@ Every suggestion must fit that format; do not suggest long-form videos anywhere.
 `channels[]` holds the own channel first (`role` = `own`) and then each approved
 competitor. Each has `id`, `title`, `subs`, `metrics` (the latest 90-day Shorts metrics:
 median views, uploads per week, views per subscriber, length buckets, title features, or
-`null` when not computed yet), `views_median` (the median of the views listed in
-`videos[]`) and `videos[]`: its most-viewed summarised Shorts, each with `video_id`,
-`title`, `views`, `published_at`, `duration_s`, `is_short`, `transcript_status` and a
+`null` when not computed yet), `views_median` (the median of the views of the settled
+videos in `videos[]`) and `videos[]`: its most-viewed summarised Shorts, each with
+`video_id`, `title`, `views`, `published_at`, `settled`, `duration_s`, `is_short`,
+`transcript_status` and a
 `summary` made
 earlier from the video itself (`hook_type`, `structure`, `topic_tags`, `title_formula`,
 `pacing_note`, `claims_count`, `unique_angle`, `one_line_summary`). `meta` says how many
@@ -44,6 +45,11 @@ infer its content from its `metrics` alone.
   packet.
 - "Above median" and "below median" mean relative to that channel's own `views_median` in
   the packet.
+- A video with `settled: false` was published fewer than `meta.min_age_days` days before
+  the packet was built, so its view count means nothing yet. It is **not evidence of
+  performance either way**: never list it in `below_median_video_ids` or
+  `above_median_video_ids`, and never cite its views for or against a pattern. You may
+  still cite it for what it is about (topic, hook, title) when views are not the point.
 - Views are not comparable across channels of different sizes; compare within a channel,
   or use `views_per_sub` from `metrics`.
 

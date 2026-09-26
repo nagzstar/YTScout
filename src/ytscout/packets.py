@@ -11,9 +11,12 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
+from ytscout.scoring.metrics import is_settled
 from ytscout.store import repo, utc_now
+from ytscout.youtube import parse_dt
 
 DESCRIPTION_MAX = 1_000
 TRANSCRIPT_MAX = 6_000
@@ -139,6 +142,8 @@ def _competitor_channel(
     channel: sqlite3.Row,
     metrics: dict | None,
     videos_per_channel: int,
+    now: datetime,
+    min_age_days: int,
 ) -> dict:
     snap = repo.latest_channel_snapshot(conn, channel["id"])
     videos = []
@@ -152,13 +157,15 @@ def _competitor_channel(
                 "title": row["title"],
                 "views": row["views"],
                 "published_at": row["published_at"],
+                "settled": is_settled(parse_dt(row["published_at"]), now, min_age_days),
                 "duration_s": row["duration_s"],
                 "is_short": bool(row["is_short"]),
                 "transcript_status": row["transcript_status"],
                 "summary": json.loads(row["summary_json"]) if row["summary_json"] else None,
             }
         )
-    views = [v["views"] for v in videos if v["views"] is not None]
+    # Unsettled videos are too young for their views to mean anything (046).
+    views = [v["views"] for v in videos if v["settled"] and v["views"] is not None]
     return {
         "id": channel["id"],
         "title": channel["title"],
@@ -170,7 +177,9 @@ def _competitor_channel(
     }
 
 
-def competitor_packet(conn: sqlite3.Connection) -> dict:
+def competitor_packet(
+    conn: sqlite3.Connection, *, min_age_days: int, now: datetime | None = None
+) -> dict:
     """The own channel and every ``approved`` channel with their summarised Shorts.
 
     The packet is one ``format`` (045): only videos of ``COMPETITOR_FORMAT`` are listed, so
@@ -179,7 +188,11 @@ def competitor_packet(conn: sqlite3.Connection) -> dict:
     ``COMPETITOR_VIDEOS`` summarised Shorts by views. When the JSON would be over
     ``COMPETITOR_PACKET_MAX_BYTES`` the packet is rebuilt with ``COMPETITOR_VIDEOS_REDUCED``
     per channel and ``meta.reduced`` says so.
+
+    A video younger than ``min_age_days`` at ``now`` (default: the build time) carries
+    ``settled: false`` and is left out of the channel's ``views_median`` (046).
     """
+    now = now or utc_now()
     channels = [
         c for c in repo.tracked_channels(conn) if c["role"] == "own" or c["status"] == "approved"
     ]
@@ -203,15 +216,17 @@ def competitor_packet(conn: sqlite3.Connection) -> dict:
             "own_channel_id": own_id,
             "format": COMPETITOR_FORMAT,
             "meta": {
-                "built_at": utc_now().isoformat(timespec="seconds").replace("+00:00", "Z"),
+                "built_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
                 "metrics_window": COMPETITOR_WINDOW,
                 "metrics_format": COMPETITOR_FORMAT,
                 "videos_per_channel": per_channel,
+                "min_age_days": min_age_days,
                 "reduced": reduced,
                 "note": note,
             },
             "channels": [
-                _competitor_channel(conn, c, metrics.get(c["id"]), per_channel) for c in channels
+                _competitor_channel(conn, c, metrics.get(c["id"]), per_channel, now, min_age_days)
+                for c in channels
             ],
         }
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -193,9 +194,23 @@ def conn(tmp_path: Path) -> sqlite3.Connection:
 # --- packet ----------------------------------------------------------------------------------
 
 
+def test_packet_unsettled_videos_are_marked_and_sit_out_views_median(
+    conn: sqlite3.Connection,
+) -> None:
+    # 046. Own o1..o4 published 2026-01-02..05 with views 100..400. At 2026-01-06 with
+    # min_age_days 2, o4 (1 day old) is unsettled and o3 (exactly 2 days) is settled.
+    seed(conn)
+    packet = competitor_packet(conn, min_age_days=2, now=datetime(2026, 1, 6, tzinfo=UTC))
+    own = packet["channels"][0]
+    settled = {v["video_id"]: v["settled"] for v in own["videos"]}
+    assert settled == {"o1": True, "o2": True, "o3": True, "o4": False}
+    assert own["views_median"] == 200  # 100 200 300; with o4 it would be 250
+    assert packet["meta"]["min_age_days"] == 2
+
+
 def test_packet_holds_own_then_approved_with_latest_summaries(conn: sqlite3.Connection) -> None:
     seed(conn)
-    packet = competitor_packet(conn)
+    packet = competitor_packet(conn, min_age_days=0)
     assert packet["own_channel_id"] == OWN
     assert [c["id"] for c in packet["channels"]] == [OWN, COMP2, COMP]  # own, then by title
     assert [c["role"] for c in packet["channels"]] == ["own", "competitor", "competitor"]
@@ -272,7 +287,7 @@ def test_packet_holds_only_shorts(conn: sqlite3.Connection) -> None:
         repo.upsert_channel(conn, "UCessays", role="competitor", title="Zeta Essays")
         repo.set_channel_status(conn, "UCessays", "approved")
     _add_video(conn, "el", "UCessays", is_short=False, views=999)
-    packet = competitor_packet(conn)
+    packet = competitor_packet(conn, min_age_days=0)
     assert packet["format"] == "shorts" == packet["meta"]["metrics_format"]
     by_id = {c["id"]: c for c in packet["channels"]}
     assert [v["video_id"] for v in by_id[COMP]["videos"]] == ["c3", "c2", "c1", "cs"]
@@ -302,7 +317,7 @@ def test_summary_candidates_put_shorts_before_long_form(conn: sqlite3.Connection
 
 def test_packet_caps_videos_and_reduces_when_large(conn: sqlite3.Connection) -> None:
     seed(conn, own_videos=20)
-    packet = competitor_packet(conn)
+    packet = competitor_packet(conn, min_age_days=0)
     assert len(packet["channels"][0]["videos"]) == COMPETITOR_VIDEOS
     # Bloat every own summary until the packet passes the cap: 10 per channel, noted.
     with conn:
@@ -315,7 +330,7 @@ def test_packet_caps_videos_and_reduces_when_large(conn: sqlite3.Connection) -> 
                 transcript_status="error",
                 summary={**summary(i, "x"), "one_line_summary": "y" * 12_000},
             )
-    packet = competitor_packet(conn)
+    packet = competitor_packet(conn, min_age_days=0)
     assert packet["meta"]["reduced"] is True
     assert packet["meta"]["videos_per_channel"] == COMPETITOR_VIDEOS_REDUCED
     assert "cut from 15 to 10" in packet["meta"]["note"]
@@ -324,7 +339,7 @@ def test_packet_caps_videos_and_reduces_when_large(conn: sqlite3.Connection) -> 
 
 
 def test_packet_with_no_channels_is_empty(conn: sqlite3.Connection) -> None:
-    packet = competitor_packet(conn)
+    packet = competitor_packet(conn, min_age_days=0)
     assert packet["own_channel_id"] is None and packet["channels"] == []
 
 
@@ -531,7 +546,7 @@ def test_cli_competitors_dry_run_calls_nothing_and_writes_nothing(
     out = capsys.readouterr().out
     assert "dry run: the competitor packet" in out
     assert "format: shorts" in out
-    assert f"  {OWN} Countdown Animal Kingdom: 4 summarised shorts, role own" in out
+    assert f"  {OWN} Countdown Animal Kingdom: 4 summarised shorts (0 unsettled), role own" in out
     assert "channels: 3; videos: 10; packet:" in out
     assert "claude: ok" in out
     assert fake_claude.record()["argv"] == ["--version"]  # only the version check ran

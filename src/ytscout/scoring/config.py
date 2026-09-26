@@ -146,6 +146,12 @@ def metrics_config(config: dict[str, Any]) -> MetricsConfig:
             "competitor_metrics.outlier_window_videos must be a positive integer in"
             f" scoring.yaml, got {window!r}"
         )
+    min_age = section.get("min_age_days")
+    if isinstance(min_age, bool) or not isinstance(min_age, int) or min_age < 0:
+        raise ScoringConfigError(
+            "competitor_metrics.min_age_days must be a non-negative integer in scoring.yaml,"
+            f" got {min_age!r}"
+        )
     raw = section.get("length_buckets")
     if not isinstance(raw, list) or not raw:
         raise ScoringConfigError("competitor_metrics.length_buckets must be a non-empty list")
@@ -168,7 +174,7 @@ def metrics_config(config: dict[str, Any]) -> MetricsConfig:
             )
         previous = top if top is not None else previous
         buckets.append(LengthBucket(label, top))
-    return MetricsConfig(float(multiplier), window, tuple(buckets))
+    return MetricsConfig(float(multiplier), window, tuple(buckets), min_age)
 
 
 def summaries_per_channel(config: dict[str, Any]) -> int:
