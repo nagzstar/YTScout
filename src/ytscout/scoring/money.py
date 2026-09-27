@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from ytscout.scoring import ypp
+
 REFERENCE_ROW: tuple[str, str] = ("animals_nature", "shorts")
 UNCALIBRATED = "uncalibrated"
 # What the flag means when it shows: the own channel has no monetised views in the
 # calibration window (not yet in the Partner Programme, 050), so RPMs are the table's own.
 UNCALIBRATED_LABEL = "uncalibrated: no monetised views yet"
-FLAG_LABELS: dict[str, str] = {UNCALIBRATED: UNCALIBRATED_LABEL}
+FLAG_LABELS: dict[str, str] = {UNCALIBRATED: UNCALIBRATED_LABEL, **ypp.FLAG_LABELS}
 
 
 def flag_label(flag: str) -> str:

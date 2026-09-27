@@ -241,8 +241,9 @@ def test_cli_with_no_db_and_no_settings_exits_0(
 
 def _seed_niches(conn: sqlite3.Connection) -> dict[str, int]:
     """023's example scored for real, plus hand-written rows: an older example score (for
-    the trend), a higher-scoring long-form niche (tracking), a disqualified Shorts niche
-    (shelved) and a proposed one (waiting)."""
+    the trend), a higher-scoring long-form niche (tracking, YPP in 8.5 months), a
+    disqualified Shorts niche (shelved, YPP unreachable), a low-scoring Shorts niche that
+    reaches YPP in 14 months (054: it must rank first) and a proposed one (waiting)."""
     example = build_example(conn)
     with conn:
         repo.add_niche_score(
@@ -269,6 +270,8 @@ def _seed_niches(conn: sqlite3.Connection) -> dict[str, int]:
             est_monthly_gbp=7.8,
             manual_hours_per_month=5.2,
             score=1.5,
+            months_to_ypp=8.5,
+            ypp_reachable=1,
         )
         cars = add_niche(conn, topic="car-crashes", status="shelve")
         repo.add_niche_score(
@@ -276,13 +279,29 @@ def _seed_niches(conn: sqlite3.Connection) -> dict[str, int]:
             cars,
             scored_at=SCORED_AT,
             flags=["disqualified", "uncalibrated"],
+            ypp_flags=["ypp_unreachable_at_rate"],
             opportunity=0.2,
             est_monthly_gbp=0.5,
             manual_hours_per_month=None,
             score=0.0,
+            months_to_ypp=None,
+            ypp_reachable=0,
+        )
+        birds = add_niche(conn, topic="bird-facts", status="scored")
+        repo.add_niche_score(
+            conn,
+            birds,
+            scored_at=SCORED_AT,
+            flags=["uncalibrated"],
+            opportunity=0.25,
+            est_monthly_gbp=0.3,
+            manual_hours_per_month=20,
+            score=0.015,
+            months_to_ypp=14.2,
+            ypp_reachable=1,
         )
         waiting = add_niche(conn, topic="volcano-facts", status="proposed", tagged=False)
-    return {"example": example, "deep": deep, "cars": cars, "waiting": waiting}
+    return {"example": example, "deep": deep, "cars": cars, "birds": birds, "waiting": waiting}
 
 
 @pytest.fixture
@@ -328,15 +347,19 @@ def test_niches_load_ranked_per_format(niche_db: tuple[Path, dict[str, int]]) ->
     finally:
         conn.close()
     shorts, longform = dash.niches["shorts"], dash.niches["longform"]
-    assert [n["id"] for n in shorts] == [ids["example"], ids["cars"]]
+    # 054: months to YPP first (birds, 14.2), then the unreachable rows by score.
+    assert [n["id"] for n in shorts] == [ids["birds"], ids["example"], ids["cars"]]
     assert [n["id"] for n in longform] == [ids["deep"]]
-    top = shorts[0]
+    assert shorts[0]["months_to_ypp"] == 14.2 and shorts[0]["ypp_reachable"] == 1
+    assert shorts[1]["months_to_ypp"] is None and shorts[1]["ypp_reachable"] == 0
+    assert shorts[2]["flags"] == ["disqualified", "uncalibrated", "ypp_unreachable_at_rate"]
+    top = shorts[1]
     assert round(top["score"], 4) == 0.1156  # the latest row, not the older 0.04
     assert top["trend"] == "▲"  # 0.387 against 0.30, 30 days older
     assert round(top["est_p25"], 3) == 0.585 and round(top["est_p75"], 2) == 2.08
     assert longform[0]["trend"] == "—"
     assert [n["id"] for n in dash.niches_waiting] == [ids["waiting"]]
-    assert dash.niche_counts == {"scored": 3, "tracking": 1, "shelved": 1}
+    assert dash.niche_counts == {"scored": 4, "tracking": 1, "shelved": 1}
     sample = top["sample"]
     assert sample["queries"] == ["q1", "q2", "q3"]
     assert {"id": "qa", "coverage": "manual"} in sample["steps"]
@@ -355,16 +378,27 @@ def test_niches_render(niche_db: tuple[Path, dict[str, int]], tmp_path: Path) ->
     finally:
         conn.close()
     html = (tmp_path / "index.html").read_text(encoding="utf-8")
-    assert "3 niches scored · 1 tracking · 1 shelved" in html
+    assert "4 niches scored · 1 tracking · 1 shelved" in html
 
-    def first_row(fmt: str) -> str:
-        panel = html.split(f'data-niche-format-panel="{fmt}"', 1)[1]
-        found = re.search(r'<tr class="niche-row" data-niche-id="(\d+)"', panel)
-        assert found is not None
-        return found.group(1)
+    def rows(fmt: str) -> list[str]:
+        panel = html.split(f'data-niche-format-panel="{fmt}"', 1)[1].split("</table>", 1)[0]
+        return re.findall(r'<tr class="niche-row" data-niche-id="(\d+)"', panel)
 
-    assert first_row("shorts") == str(ids["example"])
-    assert first_row("longform") == str(ids["deep"])
+    # 054: default order is months to YPP ascending, unreachable last, then score.
+    assert rows("shorts") == [str(ids["birds"]), str(ids["example"]), str(ids["cars"])]
+    assert rows("longform") == [str(ids["deep"])]
+    assert 'data-sort="ypp" aria-sort="ascending"' in html
+    assert 'data-sort="score" aria-sort="none"' in html
+    assert "Months to YPP" in html and "Estimate after monetisation" in html
+    birds_row = f'data-niche-id="{ids["birds"]}" data-opportunity="0.25" data-score="0.015"'
+    assert f'{birds_row} data-months-ypp="14.2"' in html
+    example_row = html.split(f'<tr class="niche-row" data-niche-id="{ids["example"]}"', 1)[1]
+    assert 'data-months-ypp=""' in example_row.split(">", 1)[0]
+    assert '<td class="num ypp" title="14.2 months">14</td>' in html
+    never = "A good newcomer's rate never fills YouTube's window"  # a template literal
+    assert f'<td class="num ypp" title="{never}">never</td>' in html
+    unreachable = "YPP unreachable at a good newcomer" + "&#39;s rate"
+    assert f'<span class="badge badge-ypp_unreachable_at_rate">{unreachable}</span>' in html
     # Shorts is the default; long-form starts hidden.
     assert 'data-niche-format-panel="shorts">' in html
     assert 'data-niche-format-panel="longform" hidden>' in html
@@ -378,7 +412,7 @@ def test_niches_render(niche_db: tuple[Path, dict[str, int]], tmp_path: Path) ->
     assert uncal in html
     assert "∞" in html  # disqualified: NULL hours
     decisions = re.findall(r'<button [^>]*data-kind="niche"[^>]*>', html)
-    assert len(decisions) == 6
+    assert len(decisions) == 8
     for nid in (ids["example"], ids["deep"], ids["cars"]):
         assert f'data-id="{nid}" data-decision="track"' in html
         assert f'data-id="{nid}" data-decision="shelve"' in html
@@ -412,7 +446,7 @@ def test_cli_dashboard_renders_niches(tmp_path: Path, capsys: pytest.CaptureFixt
     finally:
         conn.close()
     assert main(["dashboard"]) == EXIT_OK
-    assert "3 niches scored" in capsys.readouterr().out
+    assert "4 niches scored" in capsys.readouterr().out
     html = (tmp_path / "dashboard" / "index.html").read_text(encoding="utf-8")
     sample = html.split(f'id="niche-sample-{ids["example"]}"', 1)[1].split("</tr>", 1)[0]
     assert 'href="https://www.youtube.com/watch?v=UC' in sample  # config/ read from the root

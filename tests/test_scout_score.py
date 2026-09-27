@@ -146,6 +146,10 @@ def assert_worked_example(row: sqlite3.Row | dict) -> None:
     assert sig3(row["est_monthly_gbp"]) == 2.08  # p75 anchor (051)
     assert sig3(row["manual_hours_per_month"]) == 18.0
     assert sig3(row["score"]) == 0.116
+    # 054: 3 × 26,667 views is nowhere near 10M Shorts views in 90 days.
+    assert row["months_to_ypp"] is None and row["ypp_reachable"] == 0
+    if "ypp_flags_json" in row.keys():  # a DB row; NicheScore.values carries no flags
+        assert json.loads(row["ypp_flags_json"]) == ["ypp_unreachable_at_rate"]
 
 
 # ---------------------------------------------------------------- build_sample / calibration
@@ -252,6 +256,33 @@ def test_proposed_and_shelved_niches_are_not_scored_and_track_keeps_its_status(
     result = run_score(conn)
     assert [s.niche_id for s in result.scored] == [tracked]
     assert repo.get_niche(conn, tracked)["status"] == "track"
+
+
+def test_migration_0013_adds_the_ypp_columns_and_they_round_trip(
+    conn: sqlite3.Connection,
+) -> None:
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(niche_scores)")}
+    assert {"months_to_ypp", "ypp_reachable", "ypp_flags_json"} <= columns
+    niche_id = add_niche(conn)
+    with conn:
+        repo.add_niche_score(
+            conn,
+            niche_id,
+            scored_at=NOW,
+            flags=["low_confidence"],
+            ypp_flags=["ypp_no_duration"],
+            score=0.5,
+            months_to_ypp=7.25,
+            ypp_reachable=1,
+        )
+        # The default: a row written without the 054 fields has an empty flag list.
+        repo.add_niche_score(conn, niche_id, scored_at=NOW, flags=[], score=0.1)
+    first, second = score_rows(conn)
+    assert first["months_to_ypp"] == 7.25 and first["ypp_reachable"] == 1
+    assert json.loads(first["ypp_flags_json"]) == ["ypp_no_duration"]
+    assert json.loads(first["confidence_flags_json"]) == ["low_confidence"]
+    assert second["months_to_ypp"] is None and second["ypp_reachable"] is None
+    assert json.loads(second["ypp_flags_json"]) == []
 
 
 def test_longform_niche_is_flagged_longform_uncalibrated(conn: sqlite3.Connection) -> None:

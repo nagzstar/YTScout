@@ -215,7 +215,29 @@ score_gbp_per_manual_hour = est_monthly_gbp / max(manual_hours_per_month, 2)
 ```
 The floor of 2 hours/month stops fully-automated niches from producing infinite scores.
 
-The dashboard shows, per niche per format: **score**, opportunity, est £/month (with p25–p75 band), manual h/month, confidence flags, 12-month trend arrow. Rank by score; filter by opportunity ≥ threshold.
+The dashboard shows, per niche per format: **months to YPP** (§6.6), **score**, opportunity, est £/month (with p25–p75 band, labelled "after monetisation"), manual h/month, confidence flags, 12-month trend arrow. Default rank: months to YPP ascending with unreachable rows last (054, decision 17: the goal is a monetised channel as fast as possible); score is a sortable column. Filter by opportunity ≥ threshold. `score` itself is unchanged: it still says what a monetised channel earns per manual hour.
+
+### 6.6 Months to Partner Programme monetisation (054)
+A newcomer earns £0 until the YouTube Partner Programme accepts the channel, so every niche × format carries `months_to_ypp`: how long a good newcomer takes to qualify. Thresholds (YouTube Help "YouTube Partner Program overview & eligibility", `niche_scoring.ypp` in `config/scoring.yaml`, each with `source` and `last_reviewed`): `subs_min = 1,000` for both formats; long-form `watch_hours_12mo = 4,000` public watch hours in a rolling 12 months; Shorts `views_90d = 10,000,000` public Shorts views in a rolling 90 days.
+
+Newcomer rates come from the §6.2 anchor set (active small channels), at the same percentile `p` (75):
+```
+subs_per_month        = p75 over active_small of subs ÷ max(channel age in months, age_floor_months)
+monthly_views         = newcomer_anchor_views (§6.2)
+watch_hours_per_month = monthly_views × median duration_s of active_small's window videos × retention_share ÷ 3600
+```
+`retention_share` (0.4) is an assumption, not a YouTube figure; replace it from own Analytics once the channel has long-form.
+
+The newcomer starts at zero and its monthly rate `r` rises linearly to the anchor rate over `ramp_months` `R` (3), then holds. Accumulated by month `t`: `C(t) = r·t²/(2R)` for `t ≤ R`, `C(t) = r·(t − R/2)` after. A rolling window of `w` months holds `W(t) = C(t) − C(t − w)`, which settles at `w·r` from `t = R + w`.
+```
+months_subs        = smallest t with C(t) ≥ subs_min           (= subs_min ÷ subs_per_month + R/2 past the ramp)
+months_views       = smallest t with W(t) ≥ views_90d          (Shorts, w = 3)
+                   = smallest t with W(t) ≥ watch_hours_12mo   (long-form, w = 12, r = watch_hours_per_month)
+reachable          = both exist, i.e. subs_per_month > 0 and 3 × monthly_views ≥ views_90d (Shorts)
+                     or 12 × watch_hours_per_month ≥ watch_hours_12mo (long-form)
+months_to_ypp      = max(months_subs, months_views) if reachable else NULL
+```
+Flags (`ypp_flags_json`): `ypp_unreachable_at_rate` (a rate is known but the window never fills), `ypp_no_newcomer_rate` (no active small channel), `ypp_no_duration` (long-form with no durations). Both `months_to_ypp` and `ypp_reachable` are stored on `niche_scores`. The 500-subscriber fan-funding tier carries no ad revenue and is not modelled. Pure code: `src/ytscout/scoring/ypp.py`.
 
 ---
 
@@ -400,7 +422,7 @@ Core tables; columns abbreviated. All timestamps UTC.
 - **own_analytics** — `video_id, window_start, window_end, views, est_revenue_usd, rpm_usd, monetized_playbacks, avg_view_duration_s, avg_view_pct, impressions, ctr, sub_delta, traffic_json`
 - **niches** — `id, format, topic, topic_category, label, status, source ('llm'|'snowball'|'seed'), created_at, queries_json, required_steps_json, meta_json, validated_at, needs_specific_footage, tag_prompt_hash, tag_schema_hash, tag_notes, tagged_at`
 - **niche_channels** — `niche_id, channel_id, is_small, added_at`, `excluded_reason` (049: NULL = counted)
-- **niche_scores** — `niche_id, scored_at, opportunity, small_outlier_rate, newcomer_view_share, concentration, newcomer_monthly_views_p25/p50/p75, rpm_gbp, est_monthly_gbp, manual_hours_per_month, score, confidence_flags_json`
+- **niche_scores** — `niche_id, scored_at, opportunity, small_outlier_rate, newcomer_view_share, concentration, newcomer_monthly_views_p25/p50/p75, rpm_gbp, est_monthly_gbp, manual_hours_per_month, score, confidence_flags_json, months_to_ypp, ypp_reachable, ypp_flags_json` (the last three from 054, §6.6)
 - **competitor_analyses** — `id, run_at, prompt_hash, schema_version, packet_path, result_json, status`
 - **video_summaries** — `video_id, prompt_hash, summary_json, created_at`
 - **quota_ledger** — `day_pacific, units_used`

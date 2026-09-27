@@ -18,8 +18,9 @@ from ytscout.scoring.types import ChannelSample, NicheSample, VideoSample
 
 LOW_CONFIDENCE = "low_confidence"
 
-# Days in the "month" that monthly views are expressed in.
-_DAYS_PER_MONTH = 30
+# Days in the "month" that monthly views (and, in ypp.py, channel ages) are expressed in.
+DAYS_PER_MONTH = 30
+_DAYS_PER_MONTH = DAYS_PER_MONTH
 
 
 # ---------------------------------------------------------------- config access

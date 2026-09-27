@@ -250,6 +250,16 @@ _NICHE_SCORING_NUMBERS: dict[str, tuple[str, float]] = {
     "newcomer_views_percentile": ("number", 0),
     "newcomer_min_window_videos": ("int", 0),
 }
+# Keys of `niche_scoring.ypp:` (054): the Partner Programme thresholds and the newcomer
+# ramp. `source` and `last_reviewed` beside them are documentation, not read here.
+_NICHE_SCORING_YPP: dict[str, tuple[str, float]] = {
+    "subs_min": ("int", 1),
+    "watch_hours_12mo": ("number", 0),
+    "views_90d": ("number", 0),
+    "retention_share": ("number", 0),
+    "ramp_months": ("number", 0),
+    "age_floor_months": ("number", 0),
+}
 _NICHE_SCORING_PER_FORMAT: tuple[str, ...] = ("outlier_floor_views", "videos_per_month")
 _NICHE_SCORING_WEIGHTS: tuple[str, ...] = (
     "small_outlier_rate",
@@ -307,4 +317,18 @@ def niche_scoring_config(config: dict[str, Any]) -> dict[str, Any]:
     }
     if abs(sum(cfg["weights"].values()) - 1.0) > 1e-6:
         raise ScoringConfigError("niche_scoring.weights must sum to 1")
+    raw_ypp = section.get("ypp")
+    if not isinstance(raw_ypp, dict):
+        raise ScoringConfigError("scoring.yaml has no `niche_scoring.ypp:` mapping")
+    cfg["ypp"] = {
+        key: _niche_number(f"niche_scoring.ypp.{key}", raw_ypp.get(key), kind, minimum)
+        for key, (kind, minimum) in _NICHE_SCORING_YPP.items()
+    }
+    ypp = cfg["ypp"]
+    if ypp["watch_hours_12mo"] <= 0 or ypp["views_90d"] <= 0 or ypp["age_floor_months"] <= 0:
+        raise ScoringConfigError(
+            "niche_scoring.ypp.watch_hours_12mo, views_90d and age_floor_months must be > 0"
+        )
+    if ypp["retention_share"] > 1:
+        raise ScoringConfigError("niche_scoring.ypp.retention_share must be ≤ 1")
     return cfg

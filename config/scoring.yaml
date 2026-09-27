@@ -184,3 +184,27 @@ niche_scoring:
   # still reported as the band.
   newcomer_views_percentile: 75
   newcomer_min_window_videos: 1
+  # Months to Partner Programme monetisation (DESIGN.md 6.6, 054). The three thresholds
+  # are YouTube's, from the Help page "YouTube Partner Program overview & eligibility"
+  # (https://support.google.com/youtube/answer/72851), checked on last_reviewed. Re-check
+  # them when the page changes; the scorer reads only the numbers.
+  ypp:
+    source: https://support.google.com/youtube/answer/72851
+    last_reviewed: "2026-09-27"
+    # Both formats: public subscribers.
+    subs_min: 1000
+    # Long-form: public watch hours in the last 12 months.
+    watch_hours_12mo: 4000
+    # Shorts: public Shorts views in the last 90 days.
+    views_90d: 10000000
+    # ASSUMPTION, not a YouTube figure: the share of each long-form video's length an
+    # average viewer watches, which turns views into watch hours. 0.4 is a typical
+    # audience-retention figure for a 5-15 minute faceless video; adjust from the own
+    # channel's Analytics when it has long-form.
+    retention_share: 0.4
+    # The newcomer starts at zero and its monthly rate rises linearly to the anchor rate
+    # over this many months, then holds (the model in ypp.py's docstring). 0 = no ramp.
+    ramp_months: 3
+    # subs_per_month = subs / channel age in months; ages below this floor are raised to it
+    # so a days-old channel with a few hundred subs does not set the pace.
+    age_floor_months: 1

@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ytscout.audit import PipelineCoverage, Step
-from ytscout.scoring import RelevanceConfig, effort, final, money, opportunity
+from ytscout.scoring import RelevanceConfig, effort, final, money, opportunity, ypp
 from ytscout.scoring.types import ChannelSample, NicheSample, VideoSample
 from ytscout.scout import relevance as relevance_gate
 from ytscout.store import repo, to_utc_iso
@@ -127,6 +127,8 @@ class NicheScore:
     # Channels in niche_channels, and how many of them the relevance gate left out (049).
     sampled: int = 0
     excluded: int = 0
+    # Why months_to_ypp is NULL, when it is (054): ypp.FLAG_LABELS has the words.
+    ypp_flags: list[str] = field(default_factory=list)
 
     @property
     def score(self) -> float:
@@ -150,7 +152,7 @@ def score_niche(
     calibration: float | None,
     now: datetime,
 ) -> NicheScore:
-    """One niche through §6.1-6.5. ``calibration`` is ``calibration_from_db``'s answer."""
+    """One niche through §6.1-6.6. ``calibration`` is ``calibration_from_db``'s answer."""
     fmt = niche["format"]
     links = repo.niche_channels(conn, niche["id"])
     sample = build_sample(conn, niche["id"], cfg, now=now)
@@ -185,6 +187,7 @@ def score_niche(
     flags.extend(effort_flags)
     per_month = effort.manual_hours_per_month(per_video, cfg["videos_per_month"][fmt])
     value = final.score(est, per_month, cfg["manual_hours_floor_per_month"])
+    estimate = ypp.months_to_ypp(sample, cfg)
     return NicheScore(
         niche_id=niche["id"],
         label=niche["label"] or niche["topic"],
@@ -203,10 +206,14 @@ def score_niche(
             # `disqualified` flag says the same thing without surprising a reader.
             "manual_hours_per_month": None if math.isinf(per_month) else per_month,
             "score": value,
+            # §6.6 (054): months until a good newcomer meets both YPP thresholds.
+            "months_to_ypp": estimate.months,
+            "ypp_reachable": int(estimate.reachable),
         },
         flags=flags,
         sampled=len(links),
         excluded=sum(1 for link in links if link["excluded_reason"] is not None),
+        ypp_flags=list(estimate.flags),
     )
 
 
@@ -265,7 +272,12 @@ def score_niches(
                 now=now,
             )
             repo.add_niche_score(
-                conn, niche["id"], scored_at=now, flags=scored.flags, **scored.values
+                conn,
+                niche["id"],
+                scored_at=now,
+                flags=scored.flags,
+                ypp_flags=scored.ypp_flags,
+                **scored.values,
             )
             repo.mark_niche_scored(conn, niche["id"])
             result.scored.append(scored)
@@ -278,7 +290,9 @@ def _num(value: float | None, fmt: str) -> str:
 
 def format_table(result: NicheScoreResult) -> str:
     """The ranked table: best £ per manual hour first."""
-    rows = [("#", "id", "label", "format", "kept", "score", "opp", "£/mo", "h/mo", "flags")]
+    rows = [
+        ("#", "id", "label", "format", "kept", "score", "opp", "£/mo", "h/mo", "YPP mo", "flags")
+    ]
     for i, s in enumerate(result.ranked(), 1):
         v = s.values
         rows.append(
@@ -294,7 +308,8 @@ def format_table(result: NicheScoreResult) -> str:
                 _num(v["manual_hours_per_month"], ".1f")
                 if v["manual_hours_per_month"] is not None
                 else "inf",
-                ",".join(s.flags) or "-",
+                _num(v["months_to_ypp"], ".1f") if v["months_to_ypp"] is not None else "never",
+                ",".join([*s.flags, *s.ypp_flags]) or "-",
             )
         )
     widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]

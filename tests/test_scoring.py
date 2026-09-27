@@ -91,6 +91,15 @@ CFG: dict = {
     "manual_hours_floor_per_month": 2,
     "newcomer_views_percentile": 75,
     "newcomer_min_window_videos": 1,
+    # 054: Partner Programme thresholds (YouTube Help, 2026-09-27) and the newcomer ramp.
+    "ypp": {
+        "subs_min": 1000,
+        "watch_hours_12mo": 4000,
+        "views_90d": 10_000_000,
+        "retention_share": 0.4,
+        "ramp_months": 3,
+        "age_floor_months": 1,
+    },
 }
 
 

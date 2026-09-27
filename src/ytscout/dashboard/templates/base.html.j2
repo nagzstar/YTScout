@@ -83,6 +83,9 @@ ul.observations li { margin: 4px 0; }
 /* Niches (025) */
 .niche-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 4px 0 8px; }
 .niche-controls input { width: 5em; font: inherit; }
+th.sortable button.sort { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; }
+th.sortable[aria-sort="ascending"] button.sort::after { content: " \25B2"; }
+th.sortable[aria-sort="descending"] button.sort::after { content: " \25BC"; }
 button.expand { border: none; background: none; color: var(--muted); padding: 0 4px 0 0; margin: 0; cursor: pointer; }
 .badge { display: inline-block; font-size: 11px; line-height: 1.5; padding: 0 6px; margin: 0 4px 2px 0; border-radius: 9px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .badge-disqualified { border-color: var(--series-8); color: var(--series-8); }
@@ -343,6 +346,35 @@ footer { max-width: 1100px; margin: 40px auto 24px; padding: 0 16px; color: var(
     });
   }
   if (input) { input.addEventListener("input", filter); filter(); }
+  // 054: sortable columns. Months to YPP ascending is the rendered order; "never" and
+  // unknown rows stay last whichever way the column goes. Each niche row moves with its
+  // sample row.
+  function sortKey(row, by) {
+    if (by === "score") { return parseFloat(row.getAttribute("data-score")) || 0; }
+    var months = row.getAttribute("data-months-ypp");
+    return months === "" ? null : parseFloat(months);
+  }
+  document.addEventListener("click", function (ev) {
+    var head = ev.target.closest ? ev.target.closest("th.sortable") : null;
+    if (!head) { return; }
+    var table = head.closest("table");
+    var by = head.getAttribute("data-sort");
+    var dir = head.getAttribute("aria-sort") === "ascending" ? "descending" : "ascending";
+    Array.prototype.forEach.call(table.querySelectorAll("th.sortable"), function (h) {
+      h.setAttribute("aria-sort", h === head ? dir : "none");
+    });
+    var body = table.querySelector("tbody");
+    var pairs = Array.prototype.map.call(body.querySelectorAll("tr.niche-row"), function (row) {
+      return { row: row, more: detail(row), key: sortKey(row, by) };
+    });
+    pairs.sort(function (a, b) {
+      if (a.key === null && b.key === null) { return 0; }
+      if (a.key === null) { return 1; }
+      if (b.key === null) { return -1; }
+      return dir === "ascending" ? a.key - b.key : b.key - a.key;
+    });
+    pairs.forEach(function (p) { body.appendChild(p.row); if (p.more) { body.appendChild(p.more); } });
+  });
   document.addEventListener("click", function (ev) {
     var btn = ev.target.closest ? ev.target.closest("button.expand") : null;
     if (!btn) { return; }

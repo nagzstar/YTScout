@@ -79,7 +79,8 @@ class Dashboard:
     # The latest competitor analysis (017): status, run_at, hashes, the grounded analysis
     # and the id → title maps the Findings section links with. None when never run.
     findings: dict[str, Any] | None = None
-    # {format: [latest niche_scores row per niche, best score first]} (025).
+    # {format: [latest niche_scores row per niche, fewest months to YPP first (054),
+    # unreachable or unknown last, then best score]} (025).
     niches: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # Niches with no niche_scores row yet (proposed, validated): the "waiting" table.
     niches_waiting: list[dict[str, Any]] = field(default_factory=list)
@@ -445,9 +446,22 @@ def _gbp_band(latest: dict[str, Any], views: float | None) -> float | None:
     return views / 1000.0 * latest["rpm_gbp"]
 
 
+def _niche_order(row: dict[str, Any]) -> tuple[int, float, float, int]:
+    """054: months to YPP ascending; unreachable (and rows scored before 054, months NULL)
+    last; ties by score descending, then id."""
+    months = row["months_to_ypp"]
+    unreachable = months is None or not row["ypp_reachable"]
+    return (
+        1 if unreachable else 0,
+        0.0 if unreachable else months,
+        -(row["score"] or 0.0),
+        row["id"],
+    )
+
+
 def _load_niches(conn: sqlite3.Connection, dash: Dashboard, context: NicheContext) -> None:
-    """Latest ``niche_scores`` row per niche, split by format and ranked by score; niches
-    without a score go to the waiting list."""
+    """Latest ``niche_scores`` row per niche, split by format and ranked by months to YPP
+    then score (``_niche_order``); niches without a score go to the waiting list."""
     niches = _rows(conn, "SELECT * FROM niches ORDER BY id")
     if not niches:
         return
@@ -476,13 +490,17 @@ def _load_niches(conn: sqlite3.Connection, dash: Dashboard, context: NicheContex
                 "est_p25": _gbp_band(latest, latest["newcomer_monthly_views_p25"]),
                 "est_p75": _gbp_band(latest, latest["newcomer_monthly_views_p75"]),
                 "hours": latest["manual_hours_per_month"],
-                "flags": _json_list(latest["confidence_flags_json"]),
+                "months_to_ypp": latest["months_to_ypp"],
+                # None: the row predates 054 (unknown); 0/1 otherwise.
+                "ypp_reachable": latest["ypp_reachable"],
+                "flags": _json_list(latest["confidence_flags_json"])
+                + _json_list(latest["ypp_flags_json"]),
                 "trend": trend(rows),
                 "sample": _niche_sample(conn, niche, latest["scored_at"], context),
             }
         )
     for ranked in tables.values():
-        ranked.sort(key=lambda r: (-(r["score"] or 0.0), r["id"]))
+        ranked.sort(key=_niche_order)
     dash.niches = tables
     dash.niche_counts = {
         "scored": sum(len(r) for r in tables.values()),

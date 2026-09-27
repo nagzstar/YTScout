@@ -1155,6 +1155,9 @@ _NICHE_SCORE_COLUMNS = (
     "est_monthly_gbp",
     "manual_hours_per_month",
     "score",
+    # 054: months to Partner Programme monetisation (NULL) and whether it is reachable (0/1).
+    "months_to_ypp",
+    "ypp_reachable",
 )
 
 
@@ -1164,18 +1167,26 @@ def add_niche_score(
     *,
     scored_at: str | datetime,
     flags: Sequence[str],
+    ypp_flags: Sequence[str] = (),
     **values: float | None,
 ) -> int:
     """Append one ``niche_scores`` row (history: never updated). Returns its id."""
     unknown = set(values) - set(_NICHE_SCORE_COLUMNS)
     if unknown:
         raise ValueError(f"unknown niche_scores columns: {sorted(unknown)}")
-    columns = ("niche_id", "scored_at", *_NICHE_SCORE_COLUMNS, "confidence_flags_json")
+    columns = (
+        "niche_id",
+        "scored_at",
+        *_NICHE_SCORE_COLUMNS,
+        "confidence_flags_json",
+        "ypp_flags_json",
+    )
     row = (
         niche_id,
         _ts(scored_at),
         *(values.get(c) for c in _NICHE_SCORE_COLUMNS),
         json.dumps(list(flags)),
+        json.dumps(list(ypp_flags)),
     )
     cur = conn.execute(
         f"INSERT INTO niche_scores ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
