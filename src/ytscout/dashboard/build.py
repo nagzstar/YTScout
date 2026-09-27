@@ -495,6 +495,9 @@ def _load_niches(conn: sqlite3.Connection, dash: Dashboard, context: NicheContex
                 "ypp_reachable": latest["ypp_reachable"],
                 "flags": _json_list(latest["confidence_flags_json"])
                 + _json_list(latest["ypp_flags_json"]),
+                # 055: the tagger's reused-content rating; None until re-tagged.
+                "risk": niche["reused_content_risk"],
+                "risk_reason": niche["reused_content_reason"],
                 "trend": trend(rows),
                 "sample": _niche_sample(conn, niche, latest["scored_at"], context),
             }

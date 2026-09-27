@@ -31,6 +31,9 @@ LONGFORM_UNCALIBRATED = "longform_uncalibrated"
 NO_SMALL_CHANNELS = "no_small_channels"
 # Small channels exist but none published inside the window (051): no newcomer views.
 NO_ACTIVE_SMALL_CHANNELS = "no_active_small_channels"
+# 055: the step tagger rated the pipeline's videos in this niche `high` against YouTube's
+# reused-content policy. Shown, never scored: the reader decides (DESIGN.md decision 18).
+REUSED_CONTENT_HIGH = "reused_content_high"
 
 
 def _dt(value: str | None) -> datetime | None:
@@ -185,6 +188,8 @@ def score_niche(
         needs_specific_footage=bool(niche["needs_specific_footage"]),
     )
     flags.extend(effort_flags)
+    if niche["reused_content_risk"] == repo.REUSED_CONTENT_HIGH:
+        flags.append(REUSED_CONTENT_HIGH)
     per_month = effort.manual_hours_per_month(per_video, cfg["videos_per_month"][fmt])
     value = final.score(est, per_month, cfg["manual_hours_floor_per_month"])
     estimate = ypp.months_to_ypp(sample, cfg)

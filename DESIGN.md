@@ -209,6 +209,8 @@ manual_hours_per_month = manual_hours_per_video × videos_per_month
 ```
 As built (024): `scout tag` stores the steps plus `needs_specific_footage`; when true, `visuals_stock` costs `specific_footage_hours` and a `partial` override is scaled by the same ratio (0.5 h × 2.5/1.0 = 1.25 h). A disqualified niche stores `manual_hours_per_month = NULL`, score 0, flag `disqualified`.
 
+**Reused-content risk (055, decision 18).** The same `scout tag` call rates how likely YouTube's reused-content policy is to refuse monetisation to *this pipeline's* videos (stock or AI clips, TTS voice, template captions) in the niche: `reused_content_risk` is `low` (the narration is the product: analysis, an argued ranking, an explainer with its own structure), `medium` (narrated lists or facts, common and easy to call repetitive) or `high` (compilations, re-cut footage, read-aloud lists), with a one-sentence `reused_content_reason`. Both are stored on `niches`; a niche tagged under an older prompt has them NULL and is re-tagged on the next `scout tag`. `score --niches` adds the flag `reused_content_high` to `niche_scores.confidence_flags_json` when the rating is high and changes nothing else: the dashboard shows a risk column with the reason on hover and shades high rows, and Nagz decides. Turning the rating into a multiplier or a disqualification is deferred until the 027 niches are re-rated (053).
+
 ### 6.5 Final score
 ```
 score_gbp_per_manual_hour = est_monthly_gbp / max(manual_hours_per_month, 2)
@@ -420,7 +422,7 @@ Core tables; columns abbreviated. All timestamps UTC.
 - **video_snapshots** — `video_id, captured_at, views, likes, comments`
 - **transcripts** — `video_id, language, text, source, status, fetched_at`
 - **own_analytics** — `video_id, window_start, window_end, views, est_revenue_usd, rpm_usd, monetized_playbacks, avg_view_duration_s, avg_view_pct, impressions, ctr, sub_delta, traffic_json`
-- **niches** — `id, format, topic, topic_category, label, status, source ('llm'|'snowball'|'seed'), created_at, queries_json, required_steps_json, meta_json, validated_at, needs_specific_footage, tag_prompt_hash, tag_schema_hash, tag_notes, tagged_at`
+- **niches** — `id, format, topic, topic_category, label, status, source ('llm'|'snowball'|'seed'), created_at, queries_json, required_steps_json, meta_json, validated_at, needs_specific_footage, tag_prompt_hash, tag_schema_hash, tag_notes, tagged_at, reused_content_risk, reused_content_reason` (the last two from 055, §6.4)
 - **niche_channels** — `niche_id, channel_id, is_small, added_at`, `excluded_reason` (049: NULL = counted)
 - **niche_scores** — `niche_id, scored_at, opportunity, small_outlier_rate, newcomer_view_share, concentration, newcomer_monthly_views_p25/p50/p75, rpm_gbp, est_monthly_gbp, manual_hours_per_month, score, confidence_flags_json, months_to_ypp, ypp_reachable, ypp_flags_json` (the last three from 054, §6.6)
 - **competitor_analyses** — `id, run_at, prompt_hash, schema_version, packet_path, result_json, status`

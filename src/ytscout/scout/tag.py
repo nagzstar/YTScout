@@ -4,8 +4,10 @@ Up to ``BATCH_SIZE`` niches per ``claude -p`` call. The packet carries each nich
 format, category, search queries, ``why_ai_able`` and the titles of the most-viewed
 videos from its validated channels, plus ``production_steps.yaml``. The answer replaces
 ``required_steps_json`` (until then it holds the brainstorm's guess) and sets
-``needs_specific_footage`` and ``tag_prompt_hash``. A niche is re-tagged when the prompt
-changes; ``score --niches`` skips a niche that has never been tagged.
+``needs_specific_footage``, ``reused_content_risk`` / ``reused_content_reason`` (055: how
+likely YouTube's reused-content policy is to refuse the pipeline's videos in this niche)
+and ``tag_prompt_hash``. A niche is re-tagged when the prompt changes; ``score --niches``
+skips a niche that has never been tagged.
 """
 
 from __future__ import annotations
@@ -164,6 +166,7 @@ def tag_niches(
                     result.missing.append(niche["id"])
                     continue
                 required = [s for s in dict.fromkeys(answer["required_steps"]) if s in known]
+                risk = answer.get("reused_content_risk")
                 repo.set_niche_tags(
                     conn,
                     niche["id"],
@@ -173,6 +176,8 @@ def tag_niches(
                     prompt_hash=run.prompt_hash,
                     schema_hash=run.schema_hash,
                     tagged_at=tagged_at,
+                    reused_content_risk=risk if risk in repo.REUSED_CONTENT_RISKS else None,
+                    reused_content_reason=answer.get("reused_content_reason") or None,
                 )
                 result.tagged.append(niche["id"])
     return result

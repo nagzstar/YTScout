@@ -41,4 +41,21 @@ For each niche:
 - `notes`: one sentence, under 300 characters, saying what drove the choice, especially
   any disqualifying step or specific-footage call.
 
+Reused-content risk. YouTube's reused-content policy refuses Partner Programme
+monetisation to channels that repurpose other people's material without adding enough
+value: it looks for transformative commentary, educational or entertainment value added,
+original narrative or structure, and it rejects what is mass-produced, repetitive or a
+re-cut of existing footage. This pipeline makes stock or AI clips, a text-to-speech voice
+and template captions, so its videos in every niche start close to that line. Rate the
+*pipeline's* output in this niche, not the niche's best channel:
+
+- `reused_content_risk`: `low` when the narration itself is the product and would pass as
+  original analysis, an argued ranking or an explainer with its own structure, even over
+  stock clips. `medium` when the videos are narrated lists or facts where the script adds
+  some value but the format is common and easy to call repetitive. `high` when the niche
+  is clip compilations, re-cut or reuploaded footage, read-aloud lists, or anything where
+  the footage is the point and the voice is decoration.
+- `reused_content_reason`: one sentence, under 300 characters, saying why, naming what the
+  pipeline's videos would add (or fail to add) to the footage they use.
+
 Keep every text field short. Do not add fields.

@@ -256,7 +256,10 @@ def _seed_niches(conn: sqlite3.Connection) -> dict[str, int]:
         )
     run_score(conn)
     with conn:
-        deep = add_niche(conn, topic="deep-sea", fmt="longform", status="track")
+        deep = add_niche(
+            conn, topic="deep-sea", fmt="longform", status="track", risk="low",
+            reason="Argued deep dives: the narration is the product.",
+        )  # fmt: skip
         repo.add_niche_score(
             conn,
             deep,
@@ -273,12 +276,15 @@ def _seed_niches(conn: sqlite3.Connection) -> dict[str, int]:
             months_to_ypp=8.5,
             ypp_reachable=1,
         )
-        cars = add_niche(conn, topic="car-crashes", status="shelve")
+        cars = add_niche(
+            conn, topic="car-crashes", status="shelve", risk="high",
+            reason="Crash clip compilations: the footage is the point & the voice decoration.",
+        )  # fmt: skip
         repo.add_niche_score(
             conn,
             cars,
             scored_at=SCORED_AT,
-            flags=["disqualified", "uncalibrated"],
+            flags=["disqualified", "uncalibrated", "reused_content_high"],
             ypp_flags=["ypp_unreachable_at_rate"],
             opportunity=0.2,
             est_monthly_gbp=0.5,
@@ -287,7 +293,7 @@ def _seed_niches(conn: sqlite3.Connection) -> dict[str, int]:
             months_to_ypp=None,
             ypp_reachable=0,
         )
-        birds = add_niche(conn, topic="bird-facts", status="scored")
+        birds = add_niche(conn, topic="bird-facts", status="scored", risk="medium", reason="")
         repo.add_niche_score(
             conn,
             birds,
@@ -352,7 +358,13 @@ def test_niches_load_ranked_per_format(niche_db: tuple[Path, dict[str, int]]) ->
     assert [n["id"] for n in longform] == [ids["deep"]]
     assert shorts[0]["months_to_ypp"] == 14.2 and shorts[0]["ypp_reachable"] == 1
     assert shorts[1]["months_to_ypp"] is None and shorts[1]["ypp_reachable"] == 0
-    assert shorts[2]["flags"] == ["disqualified", "uncalibrated", "ypp_unreachable_at_rate"]
+    assert shorts[2]["flags"] == [
+        "disqualified", "uncalibrated", "reused_content_high", "ypp_unreachable_at_rate"
+    ]  # fmt: skip
+    # 055: the tagger's rating rides along; the 023 example was tagged without one.
+    assert shorts[2]["risk"] == "high" and shorts[2]["risk_reason"].startswith("Crash clip")
+    assert shorts[1]["risk"] is None and shorts[1]["risk_reason"] is None
+    assert longform[0]["risk"] == "low"
     top = shorts[1]
     assert round(top["score"], 4) == 0.1156  # the latest row, not the older 0.04
     assert top["trend"] == "▲"  # 0.387 against 0.30, 30 days older
@@ -382,7 +394,7 @@ def test_niches_render(niche_db: tuple[Path, dict[str, int]], tmp_path: Path) ->
 
     def rows(fmt: str) -> list[str]:
         panel = html.split(f'data-niche-format-panel="{fmt}"', 1)[1].split("</table>", 1)[0]
-        return re.findall(r'<tr class="niche-row" data-niche-id="(\d+)"', panel)
+        return re.findall(r'<tr class="niche-row[^"]*" data-niche-id="(\d+)"', panel)
 
     # 054: default order is months to YPP ascending, unreachable last, then score.
     assert rows("shorts") == [str(ids["birds"]), str(ids["example"]), str(ids["cars"])]
@@ -411,6 +423,22 @@ def test_niches_render(niche_db: tuple[Path, dict[str, int]], tmp_path: Path) ->
     uncal = '<span class="badge badge-uncalibrated">uncalibrated: no monetised views yet</span>'
     assert uncal in html
     assert "∞" in html  # disqualified: NULL hours
+    # 055: the reused-content risk column; high is shaded + marked, never hidden.
+    assert "<th title=\"How likely YouTube's reused-content policy" in html
+    assert ">Reused-content risk</th>" in html
+    cars_row = html.split(f'data-niche-id="{ids["cars"]}"', 1)[0].rsplit("<tr ", 1)[1]
+    assert cars_row.startswith('class="niche-row risk-high"')
+    reason = "Crash clip compilations: the footage is the point &amp; the voice decoration."
+    warn = '<span class="warn" aria-label="warning">⚠</span> high'
+    assert f'<td class="risk risk-high" title="{reason}">{warn}</td>' in html
+    deep_reason = "Argued deep dives: the narration is the product."
+    assert f'<td class="risk risk-low" title="{deep_reason}">low</td>' in html
+    assert '<td class="risk risk-medium" title="No reason given">medium</td>' in html
+    unknown = "Tagged before the reused-content rating existed; run scout tag"
+    assert f'<td class="risk muted" title="{unknown}">–</td>' in html
+    assert html.count('class="niche-row risk-high"') == 1
+    assert '<span class="badge badge-reused_content_high">reused-content risk: high</span>' in html
+    assert 'colspan="12"' in html and 'colspan="11"' not in html
     decisions = re.findall(r'<button [^>]*data-kind="niche"[^>]*>', html)
     assert len(decisions) == 8
     for nid in (ids["example"], ids["deep"], ids["cars"]):

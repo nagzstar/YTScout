@@ -72,6 +72,8 @@ def add_niche(
     status: str = "validated",
     tagged: bool = True,
     footage: bool = False,
+    risk: str | None = None,
+    reason: str | None = None,
 ) -> int:
     niche_id = repo.insert_niche(
         conn,
@@ -94,6 +96,8 @@ def add_niche(
             notes="n",
             prompt_hash="p" * 12,
             schema_hash="s" * 12,
+            reused_content_risk=risk,
+            reused_content_reason=reason,
         )
     return niche_id
 
@@ -285,6 +289,50 @@ def test_migration_0013_adds_the_ypp_columns_and_they_round_trip(
     assert json.loads(second["ypp_flags_json"]) == []
 
 
+def test_high_reused_content_risk_adds_a_flag_and_leaves_the_score(
+    conn: sqlite3.Connection,
+) -> None:
+    """055: `high` -> flag `reused_content_high`; score, opportunity and hours unchanged."""
+    niche_id = build_example(conn, risk="high", reason="compilations")
+    (scored,) = run_score(conn).scored
+    assert scout_score.REUSED_CONTENT_HIGH in scored.flags
+    assert sig3(scored.score) == 0.116 and sig3(scored.values["opportunity"]) == 0.387
+    row = conn.execute(
+        "SELECT confidence_flags_json FROM niche_scores WHERE niche_id = ?", (niche_id,)
+    ).fetchone()
+    assert "reused_content_high" in json.loads(row[0])
+    assert scout_score.format_table(run_score(conn)).count("reused_content_high") == 1
+
+
+@pytest.mark.parametrize("risk", [None, "low", "medium"])
+def test_other_reused_content_ratings_add_no_flag(
+    conn: sqlite3.Connection, risk: str | None
+) -> None:
+    build_example(conn, risk=risk)
+    (scored,) = run_score(conn).scored
+    assert scout_score.REUSED_CONTENT_HIGH not in scored.flags
+
+
+def test_migration_0014_adds_the_reused_content_columns_with_a_check(
+    conn: sqlite3.Connection,
+) -> None:
+    with conn:
+        niche_id = add_niche(conn, risk="medium", reason="lists")
+    row = repo.get_niche(conn, niche_id)
+    assert row["reused_content_risk"] == "medium" and row["reused_content_reason"] == "lists"
+    with pytest.raises(ValueError, match="severe"):
+        repo.set_niche_tags(
+            conn, niche_id, required_steps=REQUIRED, needs_specific_footage=False, notes="",
+            prompt_hash="p", schema_hash="s", reused_content_risk="severe",
+        )  # fmt: skip
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE niches SET reused_content_risk = 'severe' WHERE id = ?", (niche_id,))
+    # Untagged (and pre-055) niches keep NULL: the dashboard shows them as unknown.
+    with conn:
+        untagged = add_niche(conn, topic="other", tagged=False)
+    assert repo.get_niche(conn, untagged)["reused_content_risk"] is None
+
+
 def test_longform_niche_is_flagged_longform_uncalibrated(conn: sqlite3.Connection) -> None:
     build_example(conn, fmt="longform")
     run_score(conn)
@@ -364,6 +412,19 @@ def test_schema_step_enum_matches_production_steps() -> None:
     assert schema["properties"]["niches"]["maxItems"] == scout_tag.BATCH_SIZE
 
 
+def test_prompt_and_schema_carry_the_reused_content_rating() -> None:
+    prompt_path, schema_path = scout_tag.prompt_paths(REPO_ROOT)
+    prompt = prompt_path.read_text(encoding="utf-8")
+    for phrase in ("`reused_content_risk`", "`reused_content_reason`", "transformative",
+                   "mass-produced", "text-to-speech", "*pipeline's* output"):  # fmt: skip
+        assert phrase in prompt
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    props = schema["properties"]["niches"]["items"]
+    assert props["properties"]["reused_content_risk"]["enum"] == list(repo.REUSED_CONTENT_RISKS)
+    assert props["properties"]["reused_content_reason"]["maxLength"] == 300
+    assert {"reused_content_risk", "reused_content_reason"} <= set(props["required"])
+
+
 def test_prompt_names_the_disqualifying_steps() -> None:
     text = (REPO_ROOT / scout_tag.PROMPT_RELPATH).read_text(encoding="utf-8")
     assert "`footage_original` and `presenter` disqualify" in text
@@ -386,9 +447,14 @@ def test_tag_packet_carries_niche_fields_and_top_titles(conn: sqlite3.Connection
     assert [s["id"] for s in packet["production_steps"]] == [s.id for s in STEPS]
 
 
+RISK_DEFAULTS = {"reused_content_risk": "low", "reused_content_reason": "narration is the product"}
+
+
 def canned(answers: list[dict]) -> str:
+    """A fake ``claude`` result; 055's rating fields are filled in unless given."""
+    niches = [{**RISK_DEFAULTS, **a} for a in answers]
     return json.dumps(
-        {"type": "result", "is_error": False, "structured_output": {"niches": answers}}
+        {"type": "result", "is_error": False, "structured_output": {"niches": niches}}
     )
 
 
@@ -436,6 +502,52 @@ def test_tag_niches_leaves_a_missing_answer_untagged(
     )
     assert result.tagged == [ids[0]] and result.missing == [ids[1]]
     assert repo.get_niche(conn, ids[1])["tag_prompt_hash"] is None
+
+
+def test_tag_niches_stores_the_reused_content_rating(
+    conn: sqlite3.Connection, fake_claude, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    high, medium = add_validated(conn, 2)
+    answers = [
+        {"niche_id": high, "required_steps": ["qa"], "needs_specific_footage": False,
+         "notes": "x", "reused_content_risk": "high",
+         "reused_content_reason": "Crash clip compilations: the footage is the point."},
+        {"niche_id": medium, "required_steps": ["qa"], "needs_specific_footage": False,
+         "notes": "x", "reused_content_risk": "medium", "reused_content_reason": "Narrated lists."},
+    ]  # fmt: skip
+    monkeypatch.setenv("FAKE_CLAUDE_OUTPUT", canned(answers))
+    result = scout_tag.tag_niches(
+        conn, repo_root=REPO_ROOT, packets_dir=tmp_path / "p", shorts_max_seconds=180
+    )
+    assert result.failure is None and result.tagged == [high, medium]
+    row = repo.get_niche(conn, high)
+    assert row["reused_content_risk"] == "high"
+    assert row["reused_content_reason"] == "Crash clip compilations: the footage is the point."
+    assert repo.get_niche(conn, medium)["reused_content_risk"] == "medium"
+
+
+def test_niche_tagged_under_an_older_prompt_is_retagged_and_rated(
+    conn: sqlite3.Connection, fake_claude, tmp_path: Path
+) -> None:
+    """055: the 027 niches were tagged before the rating existed (hash differs, rating
+    NULL); the current prompt queues them again and the answer fills the rating in. No
+    ``FAKE_CLAUDE_OUTPUT``: the fake fills the real schema, so this also proves the fake
+    knows the new fields (enum first value ``low``)."""
+    with conn:
+        niche_id = add_niche(conn)  # tagged under prompt hash "pppp...", no rating
+    row = repo.get_niche(conn, niche_id)
+    assert row["tag_prompt_hash"] == "p" * 12 and row["reused_content_risk"] is None
+    current = scout_tag.prompt_paths(REPO_ROOT)[0]
+    current_hash = __import__("ytscout.claude_runner", fromlist=["file_hash"]).file_hash(current)
+    assert [r["id"] for r in repo.niches_to_tag(conn, current_hash, 50)] == [niche_id]
+    result = scout_tag.tag_niches(
+        conn, repo_root=REPO_ROOT, packets_dir=tmp_path / "p", shorts_max_seconds=180
+    )
+    assert result.failure is None and result.tagged == [niche_id]
+    row = repo.get_niche(conn, niche_id)
+    assert row["tag_prompt_hash"] == current_hash
+    assert row["reused_content_risk"] == "low" and row["reused_content_reason"] == "fake"
+    assert repo.niches_to_tag(conn, current_hash, 50) == []
 
 
 def test_tag_niches_reports_a_failed_call(
@@ -546,6 +658,20 @@ def test_cli_scout_tag_dry_run_plans_and_writes_nothing(
     out = capsys.readouterr().out
     assert "planned: 11 niche(s) in 2 call(s)" in out
     assert db_path(repo_root).read_bytes() == before
+
+
+def test_cli_scout_tag_dry_run_queues_niches_tagged_under_an_older_prompt(
+    repo_root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """055 acceptance: the 027 niches (tagged, old hash, no rating) are queued again."""
+    c = connect(db_path(repo_root))
+    with c:
+        old = add_niche(c, topic="old-prompt")  # hash "pppp...": not the current prompt's
+        rated = add_niche(c, topic="rated", risk="low")
+    c.close()
+    assert main(["scout", "tag", "--dry-run"]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert f"call 1: niches {old}, {rated}" in out and "planned: 2 niche(s) in 1 call(s)" in out
 
 
 def test_cli_scout_tag_tags_then_has_nothing_left(

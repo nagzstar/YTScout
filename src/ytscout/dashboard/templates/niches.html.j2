@@ -23,11 +23,11 @@
         <th>Niche</th><th>Category</th>
         <th class="num sortable" data-sort="ypp" aria-sort="ascending" title="Months until a good newcomer (the same percentile as the £ estimate) meets both Partner Programme thresholds: 1,000 subscribers and 10M Shorts views in 90 days or 4,000 watch hours in 12 months. Never: the newcomer's rate cannot fill YouTube's window. Click to sort."><button type="button" class="sort">Months to YPP</button></th>
         <th class="num sortable" data-sort="score" aria-sort="none" title="£ per manual hour after monetisation. Click to sort."><button type="button" class="sort">Score (£/manual h)</button></th><th class="num">Opportunity</th>
-        <th class="num" title="Estimate after monetisation: a newcomer at this percentile of the monthly views of small channels that published in the window. Band: p25–p75 of the same channels.">Est £/month {% if d.niche_views_percentile is not none %}p{{ "%g" | format(d.niche_views_percentile) }}{% else %}(anchor){% endif %} (band p25–p75)</th><th class="num">Manual h/month</th><th>Flags</th><th>Trend</th><th>Status</th><th>Decide</th>
+        <th class="num" title="Estimate after monetisation: a newcomer at this percentile of the monthly views of small channels that published in the window. Band: p25–p75 of the same channels.">Est £/month {% if d.niche_views_percentile is not none %}p{{ "%g" | format(d.niche_views_percentile) }}{% else %}(anchor){% endif %} (band p25–p75)</th><th class="num">Manual h/month</th><th title="How likely YouTube's reused-content policy is to refuse monetisation to this pipeline's videos (stock clips, TTS voice, template captions) in this niche, as rated by the step tagger. Hover a cell for the reason. High is shown, never hidden: you decide.">Reused-content risk</th><th>Flags</th><th>Trend</th><th>Status</th><th>Decide</th>
       </tr></thead>
       <tbody>
       {% for n in rows %}
-        <tr class="niche-row" data-niche-id="{{ n.id }}" data-opportunity="{{ n.opportunity if n.opportunity is not none else 0 }}" data-score="{{ n.score if n.score is not none else 0 }}" data-months-ypp="{{ n.months_to_ypp if (n.ypp_reachable and n.months_to_ypp is not none) else '' }}">
+        <tr class="niche-row{% if n.risk == 'high' %} risk-high{% endif %}" data-niche-id="{{ n.id }}" data-opportunity="{{ n.opportunity if n.opportunity is not none else 0 }}" data-score="{{ n.score if n.score is not none else 0 }}" data-months-ypp="{{ n.months_to_ypp if (n.ypp_reachable and n.months_to_ypp is not none) else '' }}">
           <td><button type="button" class="expand" aria-expanded="false" aria-controls="niche-sample-{{ n.id }}" title="Show the sample">▸</button> {{ n.label }}</td>
           <td>{{ n.category or "–" }}</td>
           {% if n.ypp_reachable and n.months_to_ypp is not none %}<td class="num ypp" title="{{ n.months_to_ypp | full }} months">{{ n.months_to_ypp | sig2 }}</td>{% elif n.ypp_reachable is none %}<td class="num ypp muted" title="Scored before months to YPP existed; run score --niches">–</td>{% else %}<td class="num ypp" title="A good newcomer's rate never fills YouTube's window">never</td>{% endif %}
@@ -35,6 +35,7 @@
           <td class="num" title="{{ n.opportunity | full }}">{{ n.opportunity | sig2 }}</td>
           <td class="num" title="{{ n.est | full }} ({{ n.est_p25 | full }}–{{ n.est_p75 | full }})">£{{ n.est | sig2 }} (£{{ n.est_p25 | sig2 }}–£{{ n.est_p75 | sig2 }})</td>
           <td class="num" title="{{ n.hours | full }}">{{ n.hours | sig2 if n.hours is not none else "∞" }}</td>
+          {% if n.risk %}<td class="risk risk-{{ n.risk }}" title="{{ n.risk_reason or 'No reason given' }}">{% if n.risk == 'high' %}<span class="warn" aria-label="warning">⚠</span> {% endif %}{{ n.risk }}</td>{% else %}<td class="risk muted" title="Tagged before the reused-content rating existed; run scout tag">–</td>{% endif %}
           <td>{% for f in n.flags %}<span class="badge badge-{{ f }}">{{ f | flag_label }}</span>{% else %}–{% endfor %}</td>
           <td class="trend">{{ n.trend }}</td>
           <td>{{ n.status or "–" }}</td>
@@ -44,7 +45,7 @@
           </td>
         </tr>
         <tr class="niche-sample" id="niche-sample-{{ n.id }}" hidden>
-          <td colspan="11">
+          <td colspan="12">
             <div class="sample-grid">
               <div>
                 <h4>Small channels and their outliers</h4>

@@ -1079,6 +1079,10 @@ NICHE_STATUS_SCORED = "scored"
 # Tagged and scored: validated onwards, except shelved. `track` is the stored decision value
 # (the dashboard's button); `tracking` is DESIGN.md §5.4's name for it, accepted too.
 NICHE_STATUSES_TAGGABLE = (NICHE_STATUS_VALIDATED, NICHE_STATUS_SCORED, "track", "tracking")
+# 055: the step tagger's reused-content monetisation risk, matching the schema's enum and
+# migration 0014's CHECK.
+REUSED_CONTENT_RISKS = ("low", "medium", "high")
+REUSED_CONTENT_HIGH = "high"
 
 
 def niches_to_tag(conn: sqlite3.Connection, prompt_hash: str, limit: int) -> list[sqlite3.Row]:
@@ -1101,11 +1105,20 @@ def set_niche_tags(
     prompt_hash: str,
     schema_hash: str,
     tagged_at: str | datetime | None = None,
+    reused_content_risk: str | None = None,
+    reused_content_reason: str | None = None,
 ) -> None:
-    """Store the tagger's verdict; it replaces the brainstorm's suspected steps."""
+    """Store the tagger's verdict; it replaces the brainstorm's suspected steps.
+
+    ``reused_content_risk`` (055) is ``low | medium | high``, or ``None`` when the prompt
+    that answered did not rate it; ``reused_content_reason`` goes with it.
+    """
+    if reused_content_risk is not None and reused_content_risk not in REUSED_CONTENT_RISKS:
+        raise ValueError(f"unknown reused_content_risk {reused_content_risk!r}")
     cur = conn.execute(
         "UPDATE niches SET required_steps_json = ?, needs_specific_footage = ?, tag_notes = ?,"
-        " tag_prompt_hash = ?, tag_schema_hash = ?, tagged_at = ? WHERE id = ?",
+        " tag_prompt_hash = ?, tag_schema_hash = ?, tagged_at = ?, reused_content_risk = ?,"
+        " reused_content_reason = ? WHERE id = ?",
         (
             json.dumps(list(required_steps), ensure_ascii=False),
             int(needs_specific_footage),
@@ -1113,6 +1126,8 @@ def set_niche_tags(
             prompt_hash,
             schema_hash,
             _ts(tagged_at) or now_utc(),
+            reused_content_risk,
+            reused_content_reason,
             niche_id,
         ),
     )

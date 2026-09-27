@@ -13,7 +13,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["niche_id", "required_steps", "needs_specific_footage", "notes"],
+        "required": ["niche_id", "required_steps", "needs_specific_footage", "notes", "reused_content_risk", "reused_content_reason"],
         "properties": {
           "niche_id": { "type": "integer", "minimum": 1 },
           "required_steps": {
@@ -39,7 +39,9 @@
             }
           },
           "needs_specific_footage": { "type": "boolean" },
-          "notes": { "type": "string", "maxLength": 300 }
+          "notes": { "type": "string", "maxLength": 300 },
+          "reused_content_risk": { "type": "string", "enum": ["low", "medium", "high"] },
+          "reused_content_reason": { "type": "string", "maxLength": 300 }
         }
       }
     }

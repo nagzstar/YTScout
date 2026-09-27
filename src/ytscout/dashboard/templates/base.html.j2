@@ -91,6 +91,13 @@ button.expand { border: none; background: none; color: var(--muted); padding: 0 
 .badge-disqualified { border-color: var(--series-8); color: var(--series-8); }
 .badge-low_confidence { border-color: var(--series-4); color: var(--fg); }
 .badge-weak_evidence { border-color: var(--series-4); color: var(--fg); }
+.badge-reused_content_high { border-color: var(--series-8); color: var(--series-8); }
+/* 055: reused-content risk column; a high row is shaded and marked, never hidden. */
+td.risk { text-transform: capitalize; white-space: nowrap; }
+td.risk-high { color: var(--series-8); font-weight: 600; }
+td.risk-medium { color: var(--series-4); }
+tr.niche-row.risk-high > td { background: color-mix(in srgb, var(--series-8) 10%, var(--bg)); }
+td.risk .warn { font-weight: 400; }
 td.trend { text-align: center; }
 tr.niche-sample > td { background: var(--bg); }
 .sample-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px 24px; }

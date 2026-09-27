@@ -16,7 +16,13 @@ UNCALIBRATED = "uncalibrated"
 # What the flag means when it shows: the own channel has no monetised views in the
 # calibration window (not yet in the Partner Programme, 050), so RPMs are the table's own.
 UNCALIBRATED_LABEL = "uncalibrated: no monetised views yet"
-FLAG_LABELS: dict[str, str] = {UNCALIBRATED: UNCALIBRATED_LABEL, **ypp.FLAG_LABELS}
+# 055: scout/score.py raises this when the tagger rated the niche's reused-content risk high.
+REUSED_CONTENT_HIGH_LABEL = "reused-content risk: high"
+FLAG_LABELS: dict[str, str] = {
+    UNCALIBRATED: UNCALIBRATED_LABEL,
+    "reused_content_high": REUSED_CONTENT_HIGH_LABEL,
+    **ypp.FLAG_LABELS,
+}
 
 
 def flag_label(flag: str) -> str:
